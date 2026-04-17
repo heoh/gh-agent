@@ -1,9 +1,41 @@
 #!/usr/bin/env node
 
-import { getGreeting } from './index.js';
+import { Command } from 'commander';
 
-function main(): void {
-  console.log(getGreeting());
+import { initCommand } from './commands/init.js';
+import { runCommand } from './commands/run.js';
+import { statusCommand } from './commands/status.js';
+
+function createProgram(): Command {
+  const program = new Command();
+
+  program
+    .name('gh-agent')
+    .description('CLI for running the gh-agent workspace workflow.')
+    .version('0.1.0');
+
+  program
+    .command('init')
+    .description('Initialize a gh-agent workspace.')
+    .action(initCommand);
+
+  program
+    .command('run')
+    .description('Run the gh-agent foreground loop.')
+    .action(runCommand);
+
+  program
+    .command('status')
+    .description('Show the current gh-agent workspace status.')
+    .action(statusCommand);
+
+  return program;
 }
 
-main();
+export async function main(argv = process.argv): Promise<void> {
+  const program = createProgram();
+
+  await program.parseAsync(argv);
+}
+
+void main();

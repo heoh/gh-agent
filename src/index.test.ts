@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { getGreeting } from './index.js';
+import { initCommand } from './commands/init.js';
+import { runCommand } from './commands/run.js';
+import { statusCommand } from './commands/status.js';
 
-describe('getGreeting', () => {
-  it('returns the default CLI greeting', () => {
-    expect(getGreeting()).toBe('Hello from gh-agent');
+describe('command stubs', () => {
+  it('exposes init, run, and status command handlers', () => {
+    expect(initCommand).toBeTypeOf('function');
+    expect(runCommand).toBeTypeOf('function');
+    expect(statusCommand).toBeTypeOf('function');
   });
 });

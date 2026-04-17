@@ -33,6 +33,9 @@
     "url": "https://github.com/heoh/gh-agent.git"
   },
   "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "prettier": "^3.5.3",
