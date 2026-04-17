@@ -1,0 +1,43 @@
+{
+  "name": "gh-agent",
+  "version": "0.1.0",
+  "description": "TypeScript-based CLI package for gh-agent.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "gh-agent": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "keywords": [
+    "cli",
+    "github",
+    "agent",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heoh/gh-agent.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}
