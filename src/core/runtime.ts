@@ -14,13 +14,6 @@ function parseIsoDate(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function getMockSignalSummary(): SignalSummary {
-  return {
-    unreadCount: 1,
-    actionableCount: 0,
-  };
-}
-
 export function evaluateWakeDecision(
   state: SessionState,
   signals: SignalSummary,
@@ -74,12 +67,14 @@ export function createSessionId(now = new Date()): string {
 export function startSession(
   state: SessionState,
   sessionId: string,
+  now = new Date(),
 ): SessionState {
   return {
     ...state,
     currentMode: 'active',
     currentSessionId: sessionId,
     nextWakeNotBefore: null,
+    lastSessionStartedAt: now.toISOString(),
   };
 }
 
@@ -97,5 +92,18 @@ export function finishSession(
     currentMode: 'sleeping',
     currentSessionId: null,
     nextWakeNotBefore,
+    lastSessionEndedAt: now.toISOString(),
+  };
+}
+
+export function recordNotificationPoll(
+  state: SessionState,
+  now = new Date(),
+  cursor: string | null = null,
+): SessionState {
+  return {
+    ...state,
+    lastNotificationPollAt: now.toISOString(),
+    lastSeenNotificationCursor: cursor,
   };
 }

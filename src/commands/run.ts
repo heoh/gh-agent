@@ -1,11 +1,13 @@
 import { acquireLock, releaseLock } from '../core/lock.js';
+import { createGitHubSignalClient, GitHubAuthError } from '../core/github.js';
 import {
   createSessionId,
   evaluateWakeDecision,
   finishSession,
-  getMockSignalSummary,
+  recordNotificationPoll,
   startSession,
 } from '../core/runtime.js';
+import type { GitHubSignalClient } from '../core/types.js';
 import {
   appendWakeDecision,
   ensureConfig,
@@ -15,32 +17,42 @@ import {
   saveSessionState,
 } from '../core/workspace.js';
 
-export async function runCommand(): Promise<void> {
+export async function runCommand(
+  dependencies: {
+    githubClient?: GitHubSignalClient;
+  } = {},
+): Promise<void> {
   const paths = getWorkspacePaths();
+  const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
 
   await ensureWorkspaceStructure(paths);
   const config = await ensureConfig(paths);
   let state = await ensureSessionState(paths, config.agentId);
 
-  await acquireLock(paths.lockFile, paths.root);
+  try {
+    await acquireLock(paths.lockFile, paths.root);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith('gh-agent is already running with pid ')
+    ) {
+      throw Object.assign(error, { exitCode: 4 });
+    }
+
+    throw error;
+  }
 
   try {
     console.log('Polling started');
 
     const now = new Date();
-    const signals = getMockSignalSummary();
+    const previousAgentMode = state.currentMode;
+    const signals = await githubClient.getSignalSummary(paths);
+    state = recordNotificationPoll(state, now);
+    await saveSessionState(paths, state);
 
     const wakeDecision = evaluateWakeDecision(state, signals, now);
-
-    await appendWakeDecision(paths, {
-      evaluatedAt: now.toISOString(),
-      unreadNotificationCount: signals.unreadCount,
-      actionableCardCount: signals.actionableCount,
-      shouldWake: wakeDecision.shouldWake,
-      blockedByCooldown: wakeDecision.blockedByCooldown,
-      reason: wakeDecision.reason,
-      triggerKind: wakeDecision.triggerKind,
-    });
+    let createdSessionId: string | null = null;
 
     console.log(
       `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
@@ -50,9 +62,10 @@ export async function runCommand(): Promise<void> {
       const sessionStartAt = new Date();
       const sessionId = createSessionId(sessionStartAt);
 
-      state = startSession(state, sessionId);
+      state = startSession(state, sessionId, sessionStartAt);
       await saveSessionState(paths, state);
       console.log(`Session started: ${sessionId}`);
+      createdSessionId = sessionId;
 
       const sessionEndAt = new Date();
       state = finishSession(state, config, sessionEndAt);
@@ -60,7 +73,27 @@ export async function runCommand(): Promise<void> {
     }
 
     await saveSessionState(paths, state);
+    await appendWakeDecision(paths, {
+      evaluatedAt: now.toISOString(),
+      previousAgentMode,
+      unreadNotificationCount: signals.unreadCount,
+      actionableCardCount: signals.actionableCount,
+      shouldWake: wakeDecision.shouldWake,
+      blockedByCooldown: wakeDecision.blockedByCooldown,
+      reason: wakeDecision.reason,
+      triggerKind: wakeDecision.triggerKind,
+      createdSessionId,
+    });
     console.log('Polling complete');
+  } catch (error) {
+    if (error instanceof GitHubAuthError) {
+      throw Object.assign(
+        new Error(`GitHub authentication error: ${error.message}`),
+        { exitCode: 3 },
+      );
+    }
+
+    throw error;
   } finally {
     await releaseLock(paths.lockFile);
   }

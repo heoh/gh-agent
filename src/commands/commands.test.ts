@@ -3,7 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { readLockInfo } from '../core/lock.js';
+import { GitHubAuthError } from '../core/github.js';
 import { getWorkspacePaths } from '../core/workspace.js';
+import type { GitHubSignalClient } from '../core/types.js';
 import {
   captureConsoleLogs,
   setupWorkspaceTest,
@@ -13,6 +15,27 @@ import { runCommand } from './run.js';
 import { statusCommand } from './status.js';
 
 const { getWorkspaceRoot } = setupWorkspaceTest();
+
+function createGitHubClientStub(
+  unreadCount: number,
+  actionableCount: number,
+): GitHubSignalClient {
+  return {
+    async getSignalSummary() {
+      return {
+        unreadCount,
+        actionableCount,
+      };
+    },
+    async getAuthStatus(paths) {
+      return {
+        kind: 'authenticated',
+        detail: 'stubbed auth status',
+        ghConfigDir: paths.ghConfigDir,
+      };
+    },
+  };
+}
 
 describe('commands', () => {
   it('initCommand creates the workspace files and prints the next steps', async () => {
@@ -39,19 +62,25 @@ describe('commands', () => {
     const logs = captureConsoleLogs();
 
     await initCommand();
-    await statusCommand();
+    await statusCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
 
     expect(logs).toContain(`Workspace: ${getWorkspaceRoot()}`);
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Lock: unlocked');
     expect(logs).toContain('Session: -');
+    expect(logs.some((line) => line.startsWith('GH config dir: '))).toBe(true);
+    expect(logs).toContain('GitHub auth: authenticated');
   });
 
   it('runCommand wakes, persists state, records a decision, and releases the lock', async () => {
     const logs = captureConsoleLogs();
 
     await initCommand();
-    await runCommand();
+    await runCommand({
+      githubClient: createGitHubClientStub(1, 0),
+    });
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     const state = JSON.parse(await readFile(paths.stateFile, 'utf8')) as Record<
@@ -66,8 +95,12 @@ describe('commands', () => {
     expect(state.currentMode).toBe('sleeping');
     expect(state.currentSessionId).toBeNull();
     expect(typeof state.nextWakeNotBefore).toBe('string');
+    expect(typeof state.lastNotificationPollAt).toBe('string');
+    expect(typeof state.lastSessionStartedAt).toBe('string');
+    expect(typeof state.lastSessionEndedAt).toBe('string');
     expect(decisions).toHaveLength(1);
     expect(decisions[0].shouldWake).toBe(true);
+    expect(typeof decisions[0].createdSessionId).toBe('string');
     expect(await readLockInfo(paths.lockFile)).toBeNull();
     expect(logs).toContain('Polling started');
     expect(logs.some((line) => line.startsWith('Session started: sess_'))).toBe(
@@ -93,7 +126,9 @@ describe('commands', () => {
       'utf8',
     );
 
-    await runCommand();
+    await runCommand({
+      githubClient: createGitHubClientStub(1, 0),
+    });
 
     const decisions = (await readFile(paths.wakeDecisionsFile, 'utf8'))
       .trim()
@@ -106,5 +141,29 @@ describe('commands', () => {
       false,
     );
     expect(await readLockInfo(paths.lockFile)).toBeNull();
+  });
+
+  it('runCommand maps GitHub authentication failures to exit code 3', async () => {
+    await initCommand();
+
+    await expect(
+      runCommand({
+        githubClient: {
+          async getSignalSummary() {
+            throw new GitHubAuthError('gh auth login required');
+          },
+          async getAuthStatus(paths) {
+            return {
+              kind: 'unauthenticated',
+              detail: 'gh auth login required',
+              ghConfigDir: paths.ghConfigDir,
+            };
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
   });
 });

@@ -11,6 +11,10 @@ export interface SessionState {
   currentMode: AgentMode;
   currentSessionId: string | null;
   nextWakeNotBefore: string | null;
+  lastSessionStartedAt: string | null;
+  lastSessionEndedAt: string | null;
+  lastNotificationPollAt: string | null;
+  lastSeenNotificationCursor: string | null;
 }
 
 export interface LockInfo {
@@ -29,4 +33,15 @@ export interface WakeDecision {
   blockedByCooldown: boolean;
   reason: string;
   triggerKind: 'unread' | 'actionable' | 'both' | 'none';
+}
+
+export interface GitHubAuthStatus {
+  kind: 'authenticated' | 'unauthenticated' | 'unknown';
+  detail: string;
+  ghConfigDir: string;
+}
+
+export interface GitHubSignalClient {
+  getSignalSummary(paths: { ghConfigDir: string }): Promise<SignalSummary>;
+  getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }

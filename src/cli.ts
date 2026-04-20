@@ -35,7 +35,17 @@ function createProgram(): Command {
 export async function main(argv = process.argv): Promise<void> {
   const program = createProgram();
 
-  await program.parseAsync(argv);
+  try {
+    await program.parseAsync(argv);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Unknown runtime error';
+    console.error(message);
+    process.exitCode =
+      typeof (error as { exitCode?: unknown }).exitCode === 'number'
+        ? ((error as { exitCode: number }).exitCode ?? 1)
+        : 1;
+  }
 }
 
 void main();

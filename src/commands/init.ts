@@ -25,6 +25,9 @@ export async function initCommand(): Promise<void> {
   console.log(
     `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
   );
-  console.log('Directories: work/ and .gh-agent/ ensured');
+  console.log(
+    'Directories: work/, .gh-agent/, and .gh-agent/gh-config/ ensured',
+  );
+  console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
   console.log('Next steps: gh-agent status, gh-agent run');
 }

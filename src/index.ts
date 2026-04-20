@@ -3,6 +3,8 @@ export { runCommand } from './commands/run.js';
 export { statusCommand } from './commands/status.js';
 export type {
   Config,
+  GitHubAuthStatus,
+  GitHubSignalClient,
   LockInfo,
   SessionState,
   SignalSummary,

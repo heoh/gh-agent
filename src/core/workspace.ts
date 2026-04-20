@@ -18,6 +18,7 @@ export interface WorkspacePaths {
   stateFile: string;
   lockFile: string;
   wakeDecisionsFile: string;
+  ghConfigDir: string;
   workDir: string;
 }
 
@@ -37,6 +38,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
     stateFile: path.join(stateDir, 'session_state.json'),
     lockFile: path.join(stateDir, 'lock'),
     wakeDecisionsFile: path.join(stateDir, 'wake_decisions.jsonl'),
+    ghConfigDir: path.join(stateDir, 'gh-config'),
     workDir: path.join(root, 'work'),
   };
 }
@@ -52,6 +54,10 @@ export function createInitialSessionState(
     currentMode: 'sleeping',
     currentSessionId: null,
     nextWakeNotBefore: null,
+    lastSessionStartedAt: null,
+    lastSessionEndedAt: null,
+    lastNotificationPollAt: null,
+    lastSeenNotificationCursor: null,
   };
 }
 
@@ -90,6 +96,10 @@ function normalizeIsoTimestamp(value: unknown): string | null {
 function normalizeSessionState(raw: unknown, agentId: string): SessionState {
   const record = raw as Partial<SessionState> & {
     wakeDebounceUntil?: string | null;
+    last_session_started_at?: string | null;
+    last_session_ended_at?: string | null;
+    last_notification_poll_at?: string | null;
+    last_seen_notification_cursor?: string | null;
   };
 
   return {
@@ -102,6 +112,21 @@ function normalizeSessionState(raw: unknown, agentId: string): SessionState {
     nextWakeNotBefore:
       normalizeIsoTimestamp(record.nextWakeNotBefore) ??
       normalizeIsoTimestamp(record.wakeDebounceUntil),
+    lastSessionStartedAt:
+      normalizeIsoTimestamp(record.lastSessionStartedAt) ??
+      normalizeIsoTimestamp(record.last_session_started_at),
+    lastSessionEndedAt:
+      normalizeIsoTimestamp(record.lastSessionEndedAt) ??
+      normalizeIsoTimestamp(record.last_session_ended_at),
+    lastNotificationPollAt:
+      normalizeIsoTimestamp(record.lastNotificationPollAt) ??
+      normalizeIsoTimestamp(record.last_notification_poll_at),
+    lastSeenNotificationCursor:
+      typeof record.lastSeenNotificationCursor === 'string'
+        ? record.lastSeenNotificationCursor
+        : typeof record.last_seen_notification_cursor === 'string'
+          ? record.last_seen_notification_cursor
+          : null,
   };
 }
 
@@ -123,6 +148,7 @@ export async function ensureWorkspaceStructure(
 ): Promise<void> {
   await mkdir(paths.workDir, { recursive: true });
   await mkdir(paths.stateDir, { recursive: true });
+  await mkdir(paths.ghConfigDir, { recursive: true });
 }
 
 export async function writeJsonAtomic(

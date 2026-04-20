@@ -9,8 +9,9 @@ import {
 
 function normalizeLockInfo(raw: unknown): LockInfo | null {
   const record = raw as Partial<LockInfo>;
+  const pid = record.pid;
 
-  if (!Number.isInteger(record.pid) || (record.pid ?? 0) <= 0) {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
     return null;
   }
 
@@ -22,7 +23,7 @@ function normalizeLockInfo(raw: unknown): LockInfo | null {
   }
 
   return {
-    pid: record.pid,
+    pid,
     startedAt: record.startedAt,
     workspacePath: record.workspacePath,
   };

@@ -31,6 +31,10 @@ describe('workspace normalization', () => {
       currentMode: 'sleeping',
       currentSessionId: null,
       nextWakeNotBefore: null,
+      lastSessionStartedAt: null,
+      lastSessionEndedAt: null,
+      lastNotificationPollAt: null,
+      lastSeenNotificationCursor: null,
     });
   });
 
@@ -95,6 +99,10 @@ describe('workspace normalization', () => {
       currentMode: 'active',
       currentSessionId: 'sess_legacy',
       nextWakeNotBefore: '2026-04-17T17:10:00.000Z',
+      lastSessionStartedAt: null,
+      lastSessionEndedAt: null,
+      lastNotificationPollAt: null,
+      lastSeenNotificationCursor: null,
     });
     expect(saved).not.toHaveProperty('wakeDebounceUntil');
     expect(saved.nextWakeNotBefore).toBe('2026-04-17T17:10:00.000Z');

@@ -4,6 +4,7 @@ import {
   createSessionId,
   evaluateWakeDecision,
   finishSession,
+  recordNotificationPoll,
   startSession,
 } from './runtime.js';
 import { createInitialSessionState } from './workspace.js';
@@ -118,11 +119,13 @@ describe('session state transitions', () => {
         nextWakeNotBefore: '2026-04-17T17:10:00.000Z',
       },
       sessionId,
+      new Date('2026-04-17T17:00:00.000Z'),
     );
 
     expect(state.currentMode).toBe('active');
     expect(state.currentSessionId).toBe(sessionId);
     expect(state.nextWakeNotBefore).toBeNull();
+    expect(state.lastSessionStartedAt).toBe('2026-04-17T17:00:00.000Z');
   });
 
   it('finishes a session in sleeping mode with the debounce window applied', () => {
@@ -139,5 +142,15 @@ describe('session state transitions', () => {
     expect(state.currentMode).toBe('sleeping');
     expect(state.currentSessionId).toBeNull();
     expect(state.nextWakeNotBefore).toBe('2026-04-17T17:01:00.000Z');
+    expect(state.lastSessionEndedAt).toBe('2026-04-17T17:00:00.000Z');
+  });
+
+  it('records the last notification poll timestamp', () => {
+    const state = recordNotificationPoll(
+      createInitialSessionState('gh-agent'),
+      new Date('2026-04-17T17:02:00.000Z'),
+    );
+
+    expect(state.lastNotificationPollAt).toBe('2026-04-17T17:02:00.000Z');
   });
 });
