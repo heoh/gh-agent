@@ -21,7 +21,12 @@ export async function statusCommand(): Promise<void> {
   console.log(formatValue('Workspace', paths.root));
   console.log(formatValue('Agent', config.agentId));
   console.log(formatValue('Mode', state.currentMode));
-  console.log(formatValue('Lock', lock === null ? 'unlocked' : `locked (pid ${lock.pid})`));
-  console.log(formatValue('Current session', state.currentSessionId));
-  console.log(formatValue('Next wake not before', state.nextWakeNotBefore));
+  console.log(
+    formatValue(
+      'Lock',
+      lock === null ? 'unlocked' : `locked (pid ${lock.pid})`,
+    ),
+  );
+  console.log(formatValue('Session', state.currentSessionId));
+  console.log(formatValue('Next wake', state.nextWakeNotBefore));
 }

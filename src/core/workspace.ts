@@ -1,4 +1,12 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 import type { Config, SessionState } from './types.js';
@@ -33,7 +41,10 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
   };
 }
 
-export function createInitialSessionState(agentId: string, now = new Date()): SessionState {
+export function createInitialSessionState(
+  agentId: string,
+  now = new Date(),
+): SessionState {
   void now;
 
   return {
@@ -44,6 +55,38 @@ export function createInitialSessionState(agentId: string, now = new Date()): Se
   };
 }
 
+function normalizeConfig(raw: unknown): Config {
+  const record = raw as Partial<Config>;
+
+  return {
+    agentId:
+      typeof record.agentId === 'string' && record.agentId.length > 0
+        ? record.agentId
+        : DEFAULT_CONFIG.agentId,
+    pollIntervalMs:
+      typeof record.pollIntervalMs === 'number' &&
+      Number.isFinite(record.pollIntervalMs) &&
+      record.pollIntervalMs > 0
+        ? record.pollIntervalMs
+        : DEFAULT_CONFIG.pollIntervalMs,
+    debounceMs:
+      typeof record.debounceMs === 'number' &&
+      Number.isFinite(record.debounceMs) &&
+      record.debounceMs >= 0
+        ? record.debounceMs
+        : DEFAULT_CONFIG.debounceMs,
+  };
+}
+
+function normalizeIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
 function normalizeSessionState(raw: unknown, agentId: string): SessionState {
   const record = raw as Partial<SessionState> & {
     wakeDebounceUntil?: string | null;
@@ -52,13 +95,13 @@ function normalizeSessionState(raw: unknown, agentId: string): SessionState {
   return {
     agentId: typeof record.agentId === 'string' ? record.agentId : agentId,
     currentMode: record.currentMode === 'active' ? 'active' : 'sleeping',
-    currentSessionId: typeof record.currentSessionId === 'string' ? record.currentSessionId : null,
+    currentSessionId:
+      typeof record.currentSessionId === 'string'
+        ? record.currentSessionId
+        : null,
     nextWakeNotBefore:
-      typeof record.nextWakeNotBefore === 'string'
-        ? record.nextWakeNotBefore
-        : typeof record.wakeDebounceUntil === 'string'
-          ? record.wakeDebounceUntil
-          : null,
+      normalizeIsoTimestamp(record.nextWakeNotBefore) ??
+      normalizeIsoTimestamp(record.wakeDebounceUntil),
   };
 }
 
@@ -75,12 +118,17 @@ export async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
-export async function ensureWorkspaceStructure(paths: WorkspacePaths): Promise<void> {
+export async function ensureWorkspaceStructure(
+  paths: WorkspacePaths,
+): Promise<void> {
   await mkdir(paths.workDir, { recursive: true });
   await mkdir(paths.stateDir, { recursive: true });
 }
 
-export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+export async function writeJsonAtomic(
+  filePath: string,
+  value: unknown,
+): Promise<void> {
   const tempFilePath = `${filePath}.tmp`;
   const json = `${JSON.stringify(value, null, 2)}\n`;
 
@@ -100,7 +148,16 @@ export async function ensureConfig(paths: WorkspacePaths): Promise<Config> {
     return DEFAULT_CONFIG;
   }
 
-  return readJsonFile<Config>(paths.configFile);
+  let config: Config;
+
+  try {
+    config = normalizeConfig(await readJsonFile<unknown>(paths.configFile));
+  } catch {
+    config = DEFAULT_CONFIG;
+  }
+
+  await writeJsonAtomic(paths.configFile, config);
+  return config;
 }
 
 export async function ensureSessionState(
@@ -113,7 +170,17 @@ export async function ensureSessionState(
     return initialState;
   }
 
-  const state = normalizeSessionState(await readJsonFile<unknown>(paths.stateFile), agentId);
+  let state: SessionState;
+
+  try {
+    state = normalizeSessionState(
+      await readJsonFile<unknown>(paths.stateFile),
+      agentId,
+    );
+  } catch {
+    state = createInitialSessionState(agentId);
+  }
+
   await writeJsonAtomic(paths.stateFile, state);
   return state;
 }
@@ -125,12 +192,15 @@ export async function saveSessionState(
   await writeJsonAtomic(paths.stateFile, state);
 }
 
-export async function appendWakeDecision(paths: WorkspacePaths, decision: unknown): Promise<void> {
-  const existing = (await pathExists(paths.wakeDecisionsFile))
-    ? await readFile(paths.wakeDecisionsFile, 'utf8')
-    : '';
-  const next = `${existing}${JSON.stringify(decision)}\n`;
-  await writeFile(paths.wakeDecisionsFile, next, 'utf8');
+export async function appendWakeDecision(
+  paths: WorkspacePaths,
+  decision: unknown,
+): Promise<void> {
+  await appendFile(
+    paths.wakeDecisionsFile,
+    `${JSON.stringify(decision)}\n`,
+    'utf8',
+  );
 }
 
 export async function removeFileIfExists(filePath: string): Promise<void> {

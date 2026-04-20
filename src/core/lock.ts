@@ -1,7 +1,32 @@
 import { open, readFile } from 'node:fs/promises';
 
 import type { LockInfo } from './types.js';
-import { pathExists, removeFileIfExists, writeJsonAtomic } from './workspace.js';
+import {
+  pathExists,
+  removeFileIfExists,
+  writeJsonAtomic,
+} from './workspace.js';
+
+function normalizeLockInfo(raw: unknown): LockInfo | null {
+  const record = raw as Partial<LockInfo>;
+
+  if (!Number.isInteger(record.pid) || (record.pid ?? 0) <= 0) {
+    return null;
+  }
+
+  if (
+    typeof record.startedAt !== 'string' ||
+    typeof record.workspacePath !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    pid: record.pid,
+    startedAt: record.startedAt,
+    workspacePath: record.workspacePath,
+  };
+}
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -18,16 +43,25 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export async function readLockInfo(lockFilePath: string): Promise<LockInfo | null> {
+export async function readLockInfo(
+  lockFilePath: string,
+): Promise<LockInfo | null> {
   if (!(await pathExists(lockFilePath))) {
     return null;
   }
 
-  const raw = await readFile(lockFilePath, 'utf8');
-  return JSON.parse(raw) as LockInfo;
+  try {
+    const raw = await readFile(lockFilePath, 'utf8');
+    return normalizeLockInfo(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }
 
-export async function acquireLock(lockFilePath: string, workspacePath: string): Promise<LockInfo> {
+export async function acquireLock(
+  lockFilePath: string,
+  workspacePath: string,
+): Promise<LockInfo> {
   const lockInfo: LockInfo = {
     pid: process.pid,
     startedAt: new Date().toISOString(),

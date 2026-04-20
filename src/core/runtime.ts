@@ -1,4 +1,18 @@
-import type { Config, SessionState, SignalSummary, WakeDecision } from './types.js';
+import type {
+  Config,
+  SessionState,
+  SignalSummary,
+  WakeDecision,
+} from './types.js';
+
+function parseIsoDate(value: string | null): Date | null {
+  if (value === null) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 export function getMockSignalSummary(): SignalSummary {
   return {
@@ -14,18 +28,18 @@ export function evaluateWakeDecision(
 ): WakeDecision {
   const hasUnread = signals.unreadCount > 0;
   const hasActionable = signals.actionableCount > 0;
-  const nextWakeNotBefore =
-    state.nextWakeNotBefore === null ? null : new Date(state.nextWakeNotBefore);
+  const nextWakeNotBefore = parseIsoDate(state.nextWakeNotBefore);
   const blockedByCooldown =
     nextWakeNotBefore !== null && nextWakeNotBefore.getTime() > now.getTime();
 
-  const triggerKind = hasUnread && hasActionable
-    ? 'both'
-    : hasUnread
-      ? 'unread'
-      : hasActionable
-        ? 'actionable'
-        : 'none';
+  const triggerKind =
+    hasUnread && hasActionable
+      ? 'both'
+      : hasUnread
+        ? 'unread'
+        : hasActionable
+          ? 'actionable'
+          : 'none';
 
   if (triggerKind === 'none') {
     return {
@@ -57,16 +71,26 @@ export function createSessionId(now = new Date()): string {
   return `sess_${now.getTime()}`;
 }
 
-export function startSession(state: SessionState, sessionId: string): SessionState {
+export function startSession(
+  state: SessionState,
+  sessionId: string,
+): SessionState {
   return {
     ...state,
     currentMode: 'active',
     currentSessionId: sessionId,
+    nextWakeNotBefore: null,
   };
 }
 
-export function finishSession(state: SessionState, config: Config, now = new Date()): SessionState {
-  const nextWakeNotBefore = new Date(now.getTime() + config.debounceMs).toISOString();
+export function finishSession(
+  state: SessionState,
+  config: Config,
+  now = new Date(),
+): SessionState {
+  const nextWakeNotBefore = new Date(
+    now.getTime() + config.debounceMs,
+  ).toISOString();
 
   return {
     ...state,

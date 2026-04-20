@@ -19,9 +19,12 @@ export async function initCommand(): Promise<void> {
 
   console.log('Initialized gh-agent workspace');
   console.log(`Workspace: ${paths.root}`);
-  console.log(hadConfig ? 'Kept existing config.json' : 'Created config.json');
-  console.log(hadState ? 'Kept existing .gh-agent/session_state.json' : 'Created .gh-agent/session_state.json');
-  console.log('Ensured work/ and .gh-agent/ directories');
-  console.log('Next: gh-agent status');
-  console.log('Next: gh-agent run');
+  console.log(
+    `Config: ${hadConfig ? 'existing config.json kept' : 'config.json created'}`,
+  );
+  console.log(
+    `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
+  );
+  console.log('Directories: work/ and .gh-agent/ ensured');
+  console.log('Next steps: gh-agent status, gh-agent run');
 }

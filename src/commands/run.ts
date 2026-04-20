@@ -25,7 +25,7 @@ export async function runCommand(): Promise<void> {
   await acquireLock(paths.lockFile, paths.root);
 
   try {
-    console.log('polling started');
+    console.log('Polling started');
 
     const now = new Date();
     const signals = getMockSignalSummary();
@@ -43,7 +43,7 @@ export async function runCommand(): Promise<void> {
     });
 
     console.log(
-      `unread=${signals.unreadCount} actionable=${signals.actionableCount} should_wake=${wakeDecision.shouldWake}`,
+      `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
     );
 
     if (wakeDecision.shouldWake) {
@@ -52,15 +52,15 @@ export async function runCommand(): Promise<void> {
 
       state = startSession(state, sessionId);
       await saveSessionState(paths, state);
-      console.log(`session started: ${sessionId}`);
+      console.log(`Session started: ${sessionId}`);
 
       const sessionEndAt = new Date();
       state = finishSession(state, config, sessionEndAt);
-      console.log('session ended');
+      console.log('Session ended');
     }
 
     await saveSessionState(paths, state);
-    console.log('back to polling');
+    console.log('Polling complete');
   } finally {
     await releaseLock(paths.lockFile);
   }
