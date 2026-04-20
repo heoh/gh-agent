@@ -21,6 +21,9 @@ describe('workspace normalization', () => {
     const config = await ensureConfig(paths);
     const state = await ensureSessionState(paths, config.agentId);
 
+    expect(paths.configFile).toBe(
+      `${getWorkspaceRoot()}/.gh-agent/config.json`,
+    );
     expect(config).toEqual({
       agentId: 'gh-agent',
       pollIntervalMs: 30_000,

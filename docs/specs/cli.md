@@ -23,7 +23,7 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 ### Responsibilities
 
 - workspace 디렉토리 구조 생성
-- `config.json` 초기화
+- `.gh-agent/config.json` 초기화
 - `.gh-agent/` 초기화
 - GitHub 인증 준비 또는 `gh auth login` 유도
 - 필수 설정 검증
@@ -38,7 +38,7 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 
 ### Side Effects
 
-- `config.json` 생성
+- `.gh-agent/config.json` 생성
 - `work/` 생성
 - `.gh-agent/` 생성
 - 초기 state 파일 생성 가능

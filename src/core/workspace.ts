@@ -33,7 +33,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
 
   return {
     root,
-    configFile: path.join(root, 'config.json'),
+    configFile: path.join(stateDir, 'config.json'),
     stateDir,
     stateFile: path.join(stateDir, 'session_state.json'),
     lockFile: path.join(stateDir, 'lock'),

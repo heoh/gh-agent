@@ -27,6 +27,7 @@ export async function statusCommand(
   const authStatus = await githubClient.getAuthStatus(paths);
 
   console.log(formatValue('Workspace', paths.root));
+  console.log(formatValue('Config', paths.configFile));
   console.log(formatValue('Agent', config.agentId));
   console.log(formatValue('Mode', state.currentMode));
   console.log(

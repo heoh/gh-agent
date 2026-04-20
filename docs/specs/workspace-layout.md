@@ -10,14 +10,17 @@
 
 ```text
 agent-workspace/
-  config.json
   work/
   .gh-agent/
+    config.json
+    session_state.json
+    wake_decisions.jsonl
+    lock
 ```
 
-## config.json
+## .gh-agent/config.json
 
-`config.json`은 사용자 및 실행 기본 설정을 담는다.
+`.gh-agent/config.json`은 workspace-local 사용자 및 실행 기본 설정을 담는다.
 
 예상 항목 예시:
 
@@ -28,6 +31,7 @@ agent-workspace/
 - CLI 옵션의 기본값
 
 이 파일은 사람이 읽고 수정 가능한 형식을 유지하는 것이 좋다.
+루트에 두는 전역 성격의 설정 파일이 아니라, 현재 workspace에 귀속되는 런타임 설정 파일이다.
 
 ## work/
 
@@ -64,6 +68,7 @@ agent-workspace/
 
 ```text
 .gh-agent/
+  config.json
   session_state.json
   wake_decisions.jsonl
   lock

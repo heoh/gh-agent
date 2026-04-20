@@ -55,6 +55,7 @@ describe('commands', () => {
     expect(config.agentId).toBe('gh-agent');
     expect(state.currentMode).toBe('sleeping');
     expect(logs).toContain('Initialized gh-agent workspace');
+    expect(logs).toContain('Config: .gh-agent/config.json created');
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
   });
 
@@ -67,6 +68,9 @@ describe('commands', () => {
     });
 
     expect(logs).toContain(`Workspace: ${getWorkspaceRoot()}`);
+    expect(logs).toContain(
+      `Config: ${getWorkspaceRoot()}/.gh-agent/config.json`,
+    );
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Lock: unlocked');
     expect(logs).toContain('Session: -');
