@@ -20,6 +20,7 @@ agent-workspace/
 `config.json`은 사용자 및 실행 기본 설정을 담는다.
 
 예상 항목 예시:
+
 - agent identifier
 - polling interval
 - GitHub 관련 설정
@@ -33,6 +34,7 @@ agent-workspace/
 `work/`는 에이전트 자유 작업 공간이다.
 
 허용되는 사용 예:
+
 - 여러 저장소 clone
 - scratch 파일 생성
 - 테스트 출력 저장
@@ -40,6 +42,7 @@ agent-workspace/
 - 브랜치 작업
 
 중요 원칙:
+
 - 시스템은 `work/`를 해석하지 않는다.
 - `work/`는 운영 상태 판단의 SoT가 아니다.
 - 작업 조직 방식은 에이전트 재량에 맡긴다.
@@ -49,6 +52,7 @@ agent-workspace/
 `.gh-agent/`은 시스템 내부 메타데이터를 저장한다.
 
 보관 후보:
+
 - session state
 - wake decision logs
 - last poll timestamp
@@ -69,12 +73,15 @@ agent-workspace/
 ## Locking and Logs
 
 ### Locking
+
 동일 workspace에서 둘 이상의 `run` 인스턴스가 동시에 실행되지 않도록 `.gh-agent/lock` 또는 이에 준하는 락을 둔다.
 
 ### Logs
+
 운영 로그는 `.gh-agent/logs/` 아래에 두는 것을 권장한다.
 
 로그의 목적:
+
 - poll/wake/session 디버깅
 - crash 분석
 - 최근 동작 추적

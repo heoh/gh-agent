@@ -5,6 +5,7 @@
 시스템은 업무 의미를 저장하지 않는다. 시스템이 저장하는 것은 **운영 연속성**에 필요한 최소 메타데이터뿐이다.
 
 설계 원칙:
+
 - GitHub Notifications는 신호 SoT다.
 - GitHub Projects는 업무 SoT다.
 - 시스템 상태 저장소는 운영 메타데이터만 가진다.
@@ -16,17 +17,17 @@
 
 ### Fields
 
-| Field | Description |
-|---|---|
-| agent_id | 에이전트 식별자 |
-| current_mode | `sleeping` 또는 `active` |
-| current_session_id | 현재 실행 중인 세션 ID, 없으면 null |
-| last_session_started_at | 마지막 세션 시작 시각 |
-| last_session_ended_at | 마지막 세션 종료 시각 |
-| last_notification_poll_at | 마지막 notification poll 시각 |
-| last_seen_notification_cursor | 마지막으로 본 notification 기준점 |
-| wake_debounce_until | 재기상 방지 시각 |
-| updated_at | 마지막 갱신 시각 |
+| Field                         | Description                         |
+| ----------------------------- | ----------------------------------- |
+| agent_id                      | 에이전트 식별자                     |
+| current_mode                  | `sleeping` 또는 `active`            |
+| current_session_id            | 현재 실행 중인 세션 ID, 없으면 null |
+| last_session_started_at       | 마지막 세션 시작 시각               |
+| last_session_ended_at         | 마지막 세션 종료 시각               |
+| last_notification_poll_at     | 마지막 notification poll 시각       |
+| last_seen_notification_cursor | 마지막으로 본 notification 기준점   |
+| wake_debounce_until           | 재기상 방지 시각                    |
+| updated_at                    | 마지막 갱신 시각                    |
 
 ### Semantics
 
@@ -41,19 +42,19 @@
 
 ### Fields
 
-| Field | Description |
-|---|---|
-| id | 판단 레코드 ID |
-| evaluated_at | 평가 시각 |
-| previous_agent_mode | 평가 직전 모드 |
-| unread_notification_count | unread notification 개수 |
-| actionable_card_count | Ready + Doing 카드 개수 |
-| waiting_card_count | Waiting 카드 개수 |
-| trigger_kind | `unread`, `actionable`, `both`, `none` |
-| should_wake | 실제 wake 판단 결과 |
-| debounce_blocked | debounce 때문에 막혔는지 여부 |
-| wake_reason_summary | 판단 요약 문자열 |
-| created_session_id | 실제 세션을 열었으면 그 세션 ID |
+| Field                     | Description                            |
+| ------------------------- | -------------------------------------- |
+| id                        | 판단 레코드 ID                         |
+| evaluated_at              | 평가 시각                              |
+| previous_agent_mode       | 평가 직전 모드                         |
+| unread_notification_count | unread notification 개수               |
+| actionable_card_count     | Ready + Doing 카드 개수                |
+| waiting_card_count        | Waiting 카드 개수                      |
+| trigger_kind              | `unread`, `actionable`, `both`, `none` |
+| should_wake               | 실제 wake 판단 결과                    |
+| debounce_blocked          | debounce 때문에 막혔는지 여부          |
+| wake_reason_summary       | 판단 요약 문자열                       |
+| created_session_id        | 실제 세션을 열었으면 그 세션 ID        |
 
 ### Semantics
 

@@ -17,9 +17,11 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 ## init
 
 ### Purpose
+
 새 workspace를 생성하고 초기 실행 가능 상태를 만든다.
 
 ### Responsibilities
+
 - workspace 디렉토리 구조 생성
 - `config.json` 초기화
 - `.gh-agent/` 초기화
@@ -27,18 +29,22 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - 필수 설정 검증
 
 ### Inputs
+
 예상 입력 예시:
+
 - workspace path
 - agent name 또는 identifier
 - polling interval 기본값
 
 ### Side Effects
+
 - `config.json` 생성
 - `work/` 생성
 - `.gh-agent/` 생성
 - 초기 state 파일 생성 가능
 
 ### Output
+
 - 생성된 workspace 경로
 - 다음 실행 방법 안내 (`run`)
 - 인증 상태 또는 필요한 후속 조치
@@ -46,9 +52,11 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 ## run
 
 ### Purpose
+
 포그라운드 시스템 루프를 시작한다.
 
 ### Responsibilities
+
 - 락 획득
 - current mode 초기화/복원
 - notification poll
@@ -58,6 +66,7 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - 세션 종료 후 polling으로 복귀
 
 ### Main Loop Behavior
+
 `run`은 아래 전체를 포함하는 메인 엔트리포인트다.
 
 1. state 로드
@@ -70,16 +79,19 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 8. return to poll
 
 ### Output
+
 stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 
 예시:
+
 - polling started
 - unread=2 actionable=1 should_wake=true
-- session started: sess_...
+- session started: sess\_...
 - session ended
 - back to polling
 
 ### Exit Conditions
+
 - 사용자가 명시적으로 종료
 - 복구 불가능한 초기화 에러
 - lock 획득 실패
@@ -89,9 +101,11 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 ## status
 
 ### Purpose
+
 현재 workspace의 운영 상태를 빠르게 조회한다.
 
 ### Suggested Output Fields
+
 - current mode
 - last poll time
 - last session started/ended time
@@ -103,6 +117,7 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 ## Exit Codes
 
 권장 초안:
+
 - `0`: success
 - `1`: generic runtime error
 - `2`: configuration error

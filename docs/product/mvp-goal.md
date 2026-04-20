@@ -45,16 +45,21 @@ MVP는 아래 조건을 만족하면 성공으로 본다.
 ## Design Principles
 
 ### 1. GitHub-native first
+
 모든 핵심 상호작용은 GitHub 안에서 일어나야 한다.
 
 ### 2. Cheap while sleeping
+
 할 일이 없을 때는 값싼 폴링만 수행하고, 에이전트 세션은 필요할 때만 시작한다.
 
 ### 3. System and agent are separate layers
+
 시스템은 감시·기상·세션 연속성을 담당하고, 에이전트는 판단과 실제 협업 행동을 담당한다.
 
 ### 4. Externalize working memory
+
 에이전트의 업무 상태는 GitHub Projects 보드로 외부화한다.
 
 ### 5. Prefer simple runtime over clever runtime
+
 MVP에서는 병렬성과 백그라운드 인프라보다 단일 포그라운드 루프를 우선한다.
