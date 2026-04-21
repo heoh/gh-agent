@@ -24,6 +24,9 @@ function createGitHubClientStub(
   actionableCount: number,
 ): GitHubSignalClient {
   return {
+    async login() {
+      return;
+    },
     async ensureProject() {
       return createEnsuredProjectStub();
     },
@@ -216,7 +219,41 @@ describe('commands', () => {
     expect(logs).toContain('GitHub Project: reused gh-agent');
   });
 
-  it('initCommand maps GitHub authentication failures to exit code 3', async () => {
+  it('initCommand starts gh auth login when the workspace is unauthenticated', async () => {
+    const logs = captureConsoleLogs();
+    let authChecks = 0;
+    let loginCalled = false;
+
+    await initCommand({
+      githubClient: {
+        ...createGitHubClientStub(0, 0),
+        async login() {
+          loginCalled = true;
+        },
+        async getAuthStatus(paths) {
+          authChecks += 1;
+
+          return authChecks === 1
+            ? {
+                kind: 'unauthenticated' as const,
+                detail: 'gh auth login required',
+                ghConfigDir: paths.ghConfigDir,
+              }
+            : {
+                kind: 'authenticated' as const,
+                detail: 'stubbed auth status',
+                ghConfigDir: paths.ghConfigDir,
+              };
+        },
+      },
+    });
+
+    expect(loginCalled).toBe(true);
+    expect(logs).toContain('GitHub CLI login required for this workspace');
+    expect(logs).toContain('Starting gh auth login...');
+  });
+
+  it('initCommand maps GitHub authentication failures to exit code 3 when login does not authenticate the workspace', async () => {
     await expect(
       initCommand({
         githubClient: {
@@ -260,6 +297,9 @@ describe('commands', () => {
     await expect(
       runCommand({
         githubClient: {
+          async login() {
+            return;
+          },
           async ensureProject() {
             return createEnsuredProjectStub();
           },

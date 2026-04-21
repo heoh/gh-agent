@@ -30,7 +30,15 @@ export async function initCommand(
   await ensureSessionState(paths, config.agentId);
 
   try {
-    const authStatus = await githubClient.getAuthStatus(paths);
+    let authStatus = await githubClient.getAuthStatus(paths);
+
+    if (authStatus.kind === 'unauthenticated') {
+      console.log('GitHub CLI login required for this workspace');
+      console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
+      console.log('Starting gh auth login...');
+      await githubClient.login(paths);
+      authStatus = await githubClient.getAuthStatus(paths);
+    }
 
     if (authStatus.kind !== 'authenticated') {
       throw new GitHubAuthError(authStatus.detail);

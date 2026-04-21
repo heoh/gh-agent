@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 
 import type {
   Config,
@@ -142,6 +142,37 @@ function runGhCommand(
         });
       },
     );
+  });
+}
+
+function runGhInteractiveCommand(
+  args: string[],
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('gh', args, {
+      env: createGhEnvironment(paths),
+      stdio: 'inherit',
+    });
+
+    child.on('error', (error) => {
+      reject(new GitHubRuntimeError(error.message));
+    });
+
+    child.on('exit', (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new GitHubRuntimeError(
+          signal === null
+            ? `gh ${args.join(' ')} exited with code ${code ?? 1}`
+            : `gh ${args.join(' ')} exited with signal ${signal}`,
+        ),
+      );
+    });
   });
 }
 
@@ -662,6 +693,13 @@ async function ensureProjectFields(
 }
 
 class DefaultGitHubSignalClient implements GitHubSignalClient {
+  async login(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<void> {
+    await runGhInteractiveCommand(
+      ['auth', 'login', '--hostname', 'github.com'],
+      paths,
+    );
+  }
+
   async ensureProject(
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
     projectTitle = DEFAULT_PROJECT_TITLE,

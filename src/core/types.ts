@@ -87,6 +87,7 @@ export interface EnsuredGitHubProject extends GitHubProjectConfig {
 }
 
 export interface GitHubSignalClient {
+  login(paths: { ghConfigDir: string }): Promise<void>;
   ensureProject(
     paths: { ghConfigDir: string },
     projectTitle: string,
