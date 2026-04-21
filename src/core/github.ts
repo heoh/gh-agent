@@ -1,13 +1,18 @@
 import { execFile } from 'node:child_process';
 
 import type {
+  Config,
+  EnsuredGitHubProject,
   GitHubAuthStatus,
+  GitHubProjectConfig,
   GitHubSignalClient,
   SignalSummary,
 } from './types.js';
 import type { WorkspacePaths } from './workspace.js';
 
 const ACTIONABLE_STATUS_NAMES = new Set(['Ready', 'Doing']);
+const REQUIRED_STATUS_OPTIONS = ['Ready', 'Doing', 'Waiting', 'Done'] as const;
+const DEFAULT_PROJECT_TITLE = 'gh-agent';
 
 interface GhExecutionResult {
   stdout: string;
@@ -18,27 +23,71 @@ interface NotificationThread {
   id?: string;
 }
 
+interface ViewerProjectsResponse {
+  data?: {
+    viewer?: {
+      id?: string;
+      projectsV2?: {
+        nodes?: ProjectNode[];
+      } | null;
+    } | null;
+  };
+}
+
+interface ProjectNode {
+  id?: string;
+  title?: string;
+  url?: string;
+  fields?: {
+    nodes?: ProjectFieldNode[];
+  } | null;
+  items?: {
+    nodes?: ProjectItemNode[];
+  } | null;
+}
+
+interface ProjectItemNode {
+  fieldValues?: {
+    nodes?: ProjectFieldValueNode[];
+  } | null;
+}
+
 interface ProjectFieldValueNode {
   name?: string | null;
   field?: {
+    id?: string | null;
     name?: string | null;
   } | null;
 }
 
-interface ViewerProjectsResponse {
+interface ProjectFieldNode {
+  id?: string;
+  name?: string;
+  dataType?: string;
+  options?: Array<{
+    id?: string;
+    name?: string;
+  }> | null;
+}
+
+interface ProjectNodeResponse {
   data?: {
-    viewer?: {
-      projectsV2?: {
-        nodes?: Array<{
-          items?: {
-            nodes?: Array<{
-              fieldValues?: {
-                nodes?: ProjectFieldValueNode[];
-              } | null;
-            }>;
-          } | null;
-        }>;
-      } | null;
+    node?: ProjectNode | null;
+  };
+}
+
+interface CreateProjectResponse {
+  data?: {
+    createProjectV2?: {
+      projectV2?: ProjectNode | null;
+    } | null;
+  };
+}
+
+interface CreateFieldResponse {
+  data?: {
+    createProjectV2Field?: {
+      projectV2Field?: ProjectFieldNode | null;
     } | null;
   };
 }
@@ -46,6 +95,8 @@ interface ViewerProjectsResponse {
 export class GitHubAuthError extends Error {}
 
 export class GitHubRuntimeError extends Error {}
+
+export class GitHubConfigError extends Error {}
 
 function createGhEnvironment(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
@@ -94,6 +145,21 @@ function runGhCommand(
   });
 }
 
+async function runGhGraphql<T>(
+  query: string,
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  fields: Record<string, string> = {},
+): Promise<T> {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+
+  for (const [key, value] of Object.entries(fields)) {
+    args.push('-F', `${key}=${value}`);
+  }
+
+  const { stdout } = await runGhCommand(args, paths);
+  return JSON.parse(stdout) as T;
+}
+
 function countUnreadNotifications(stdout: string): number {
   const parsed = JSON.parse(stdout) as
     | NotificationThread[]
@@ -113,31 +179,190 @@ function countUnreadNotifications(stdout: string): number {
   return (parsed as NotificationThread[]).length;
 }
 
-function isActionableItem(
-  fieldValues: ProjectFieldValueNode[] | undefined,
-): boolean {
-  return (
-    fieldValues?.some(
+function assertProjectNode(
+  project: ProjectNode | null | undefined,
+  message: string,
+): ProjectNode {
+  if (
+    project === null ||
+    project === undefined ||
+    typeof project.id !== 'string' ||
+    typeof project.title !== 'string' ||
+    typeof project.url !== 'string'
+  ) {
+    throw new GitHubRuntimeError(message);
+  }
+
+  return project;
+}
+
+function createProjectFieldMap(
+  project: ProjectNode,
+): Map<string, ProjectFieldNode> {
+  const fieldMap = new Map<string, ProjectFieldNode>();
+
+  for (const field of project.fields?.nodes ?? []) {
+    if (typeof field.name === 'string') {
+      fieldMap.set(field.name, field);
+    }
+  }
+
+  return fieldMap;
+}
+
+function requireFieldId(
+  field: ProjectFieldNode | undefined,
+  fieldName: string,
+): string {
+  if (typeof field?.id !== 'string') {
+    throw new GitHubRuntimeError(
+      `GitHub Project field ${fieldName} is missing an id`,
+    );
+  }
+
+  return field.id;
+}
+
+function requireSingleSelectField(
+  field: ProjectFieldNode | undefined,
+  fieldName: string,
+): ProjectFieldNode {
+  if (field === undefined) {
+    throw new GitHubRuntimeError(
+      `GitHub Project field ${fieldName} was not created`,
+    );
+  }
+
+  if (field.dataType !== 'SINGLE_SELECT') {
+    throw new GitHubConfigError(
+      `GitHub Project field "${fieldName}" must be a single-select field. Run gh-agent init after fixing the project schema.`,
+    );
+  }
+
+  return field;
+}
+
+function requireTextField(
+  field: ProjectFieldNode | undefined,
+  fieldName: string,
+): ProjectFieldNode {
+  if (field === undefined) {
+    throw new GitHubRuntimeError(
+      `GitHub Project field ${fieldName} was not created`,
+    );
+  }
+
+  if (field.dataType !== 'TEXT') {
+    throw new GitHubConfigError(
+      `GitHub Project field "${fieldName}" must be a text field. Run gh-agent init after fixing the project schema.`,
+    );
+  }
+
+  return field;
+}
+
+function requireStatusOptionIds(
+  field: ProjectFieldNode,
+): GitHubProjectConfig['projectStatusOptionIds'] {
+  const optionMap = new Map<string, string>();
+
+  for (const option of field.options ?? []) {
+    if (typeof option?.name === 'string' && typeof option.id === 'string') {
+      optionMap.set(option.name, option.id);
+    }
+  }
+
+  const ready = optionMap.get('Ready');
+  const doing = optionMap.get('Doing');
+  const waiting = optionMap.get('Waiting');
+  const done = optionMap.get('Done');
+
+  if (
+    ready === undefined ||
+    doing === undefined ||
+    waiting === undefined ||
+    done === undefined
+  ) {
+    throw new GitHubConfigError(
+      'GitHub Project Status field must contain Ready, Doing, Waiting, and Done options. Run gh-agent init after fixing the project schema.',
+    );
+  }
+
+  return {
+    ready,
+    doing,
+    waiting,
+    done,
+  };
+}
+
+function buildProjectConfig(project: ProjectNode): GitHubProjectConfig {
+  const fields = createProjectFieldMap(project);
+  const statusField = requireSingleSelectField(fields.get('Status'), 'Status');
+  const priorityField = requireTextField(fields.get('Priority'), 'Priority');
+  const typeField = requireTextField(fields.get('Type'), 'Type');
+  const sourceLinkField = requireTextField(
+    fields.get('Source Link'),
+    'Source Link',
+  );
+  const nextActionField = requireTextField(
+    fields.get('Next Action'),
+    'Next Action',
+  );
+  const shortNoteField = requireTextField(
+    fields.get('Short Note'),
+    'Short Note',
+  );
+
+  return {
+    projectId: project.id as string,
+    projectTitle: project.title as string,
+    projectUrl: project.url as string,
+    projectFieldIds: {
+      status: requireFieldId(statusField, 'Status'),
+      priority: requireFieldId(priorityField, 'Priority'),
+      type: requireFieldId(typeField, 'Type'),
+      sourceLink: requireFieldId(sourceLinkField, 'Source Link'),
+      nextAction: requireFieldId(nextActionField, 'Next Action'),
+      shortNote: requireFieldId(shortNoteField, 'Short Note'),
+    },
+    projectStatusOptionIds: requireStatusOptionIds(statusField),
+  };
+}
+
+function countActionableProjectItems(project: ProjectNode): number {
+  const items = project.items?.nodes ?? [];
+
+  return items.filter((item) =>
+    (item.fieldValues?.nodes ?? []).some(
       (fieldValue) =>
         fieldValue.field?.name === 'Status' &&
         typeof fieldValue.name === 'string' &&
         ACTIONABLE_STATUS_NAMES.has(fieldValue.name),
-    ) ?? false
-  );
+    ),
+  ).length;
 }
 
-function countActionableProjectItems(stdout: string): number {
-  const parsed = JSON.parse(stdout) as ViewerProjectsResponse;
-  const projects = parsed.data?.viewer?.projectsV2?.nodes ?? [];
-
-  return projects.reduce((total, project) => {
-    const items = project.items?.nodes ?? [];
-
-    return (
-      total +
-      items.filter((item) => isActionableItem(item.fieldValues?.nodes)).length
+function assertConfiguredProject(config: Config): void {
+  if (
+    config.projectId === null ||
+    config.projectTitle === null ||
+    config.projectUrl === null ||
+    config.projectFieldIds.status === null ||
+    config.projectFieldIds.priority === null ||
+    config.projectFieldIds.type === null ||
+    config.projectFieldIds.sourceLink === null ||
+    config.projectFieldIds.nextAction === null ||
+    config.projectFieldIds.shortNote === null ||
+    config.projectStatusOptionIds.ready === null ||
+    config.projectStatusOptionIds.doing === null ||
+    config.projectStatusOptionIds.waiting === null ||
+    config.projectStatusOptionIds.done === null
+  ) {
+    throw new GitHubConfigError(
+      'GitHub Project is not configured for this workspace. Run gh-agent init.',
     );
-  }, 0);
+  }
 }
 
 async function getUnreadCount(
@@ -151,24 +376,84 @@ async function getUnreadCount(
   return countUnreadNotifications(stdout);
 }
 
-async function getActionableCount(
+async function fetchViewerProjects(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
-): Promise<number> {
+): Promise<ViewerProjectsResponse> {
   const query = `
     query ViewerProjects {
       viewer {
+        id
         projectsV2(first: 20) {
           nodes {
-            items(first: 100) {
+            id
+            title
+            url
+            fields(first: 20) {
               nodes {
-                fieldValues(first: 20) {
-                  nodes {
-                    ... on ProjectV2ItemFieldSingleSelectValue {
-                      name
-                      field {
-                        ... on ProjectV2SingleSelectField {
-                          name
-                        }
+                ... on ProjectV2FieldCommon {
+                  id
+                  name
+                  dataType
+                }
+                ... on ProjectV2SingleSelectField {
+                  id
+                  name
+                  dataType
+                  options {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  return runGhGraphql<ViewerProjectsResponse>(query, paths);
+}
+
+async function fetchProjectById(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+): Promise<ProjectNode> {
+  const query = `
+    query ProjectById($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          id
+          title
+          url
+          fields(first: 20) {
+            nodes {
+              ... on ProjectV2FieldCommon {
+                id
+                name
+                dataType
+              }
+              ... on ProjectV2SingleSelectField {
+                id
+                name
+                dataType
+                options {
+                  id
+                  name
+                }
+              }
+            }
+          }
+          items(first: 100) {
+            nodes {
+              fieldValues(first: 20) {
+                nodes {
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                    field {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
                       }
                     }
                   }
@@ -181,24 +466,252 @@ async function getActionableCount(
     }
   `;
 
-  const { stdout } = await runGhCommand(
-    ['api', 'graphql', '-f', `query=${query}`],
-    paths,
-  );
+  const response = await runGhGraphql<ProjectNodeResponse>(query, paths, {
+    projectId,
+  });
 
-  return countActionableProjectItems(stdout);
+  return assertProjectNode(
+    response.data?.node,
+    'Configured GitHub Project was not found. Run gh-agent init.',
+  );
+}
+
+async function createProject(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  ownerId: string,
+  title: string,
+): Promise<ProjectNode> {
+  const query = `
+    mutation CreateProject($ownerId: ID!, $title: String!) {
+      createProjectV2(input: { ownerId: $ownerId, title: $title }) {
+        projectV2 {
+          id
+          title
+          url
+          fields(first: 20) {
+            nodes {
+              ... on ProjectV2FieldCommon {
+                id
+                name
+                dataType
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<CreateProjectResponse>(query, paths, {
+    ownerId,
+    title,
+  });
+
+  return assertProjectNode(
+    response.data?.createProjectV2?.projectV2,
+    'Failed to create the gh-agent GitHub Project.',
+  );
+}
+
+async function createTextField(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  fieldName: string,
+): Promise<ProjectFieldNode> {
+  const query = `
+    mutation CreateTextField($projectId: ID!, $fieldName: String!) {
+      createProjectV2Field(
+        input: { projectId: $projectId, name: $fieldName, dataType: TEXT }
+      ) {
+        projectV2Field {
+          ... on ProjectV2FieldCommon {
+            id
+            name
+            dataType
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<CreateFieldResponse>(query, paths, {
+    projectId,
+    fieldName,
+  });
+  const field = response.data?.createProjectV2Field?.projectV2Field;
+
+  if (
+    field === null ||
+    field === undefined ||
+    typeof field.id !== 'string' ||
+    typeof field.name !== 'string'
+  ) {
+    throw new GitHubRuntimeError(
+      `Failed to create GitHub Project field ${fieldName}.`,
+    );
+  }
+
+  return field;
+}
+
+async function createStatusField(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+): Promise<ProjectFieldNode> {
+  const query = `
+    mutation CreateStatusField($projectId: ID!) {
+      createProjectV2Field(
+        input: {
+          projectId: $projectId
+          name: "Status"
+          dataType: SINGLE_SELECT
+          singleSelectOptions: [
+            { name: "Ready", color: GREEN }
+            { name: "Doing", color: BLUE }
+            { name: "Waiting", color: YELLOW }
+            { name: "Done", color: GRAY }
+          ]
+        }
+      ) {
+        projectV2Field {
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<CreateFieldResponse>(query, paths, {
+    projectId,
+  });
+  const field = response.data?.createProjectV2Field?.projectV2Field;
+
+  if (
+    field === null ||
+    field === undefined ||
+    typeof field.id !== 'string' ||
+    typeof field.name !== 'string'
+  ) {
+    throw new GitHubRuntimeError(
+      'Failed to create GitHub Project field Status.',
+    );
+  }
+
+  return field;
+}
+
+async function ensureProjectFields(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  project: ProjectNode,
+): Promise<ProjectNode> {
+  const fields = createProjectFieldMap(project);
+
+  const existingStatus = fields.get('Status');
+  if (
+    existingStatus !== undefined &&
+    existingStatus.dataType !== 'SINGLE_SELECT'
+  ) {
+    throw new GitHubConfigError(
+      'GitHub Project field "Status" must be a single-select field. Run gh-agent init after fixing the project schema.',
+    );
+  }
+
+  for (const fieldName of [
+    'Priority',
+    'Type',
+    'Source Link',
+    'Next Action',
+    'Short Note',
+  ]) {
+    const field = fields.get(fieldName);
+    if (field !== undefined && field.dataType !== 'TEXT') {
+      throw new GitHubConfigError(
+        `GitHub Project field "${fieldName}" must be a text field. Run gh-agent init after fixing the project schema.`,
+      );
+    }
+  }
+
+  if (existingStatus === undefined) {
+    await createStatusField(paths, project.id as string);
+  }
+
+  if (!fields.has('Priority')) {
+    await createTextField(paths, project.id as string, 'Priority');
+  }
+  if (!fields.has('Type')) {
+    await createTextField(paths, project.id as string, 'Type');
+  }
+  if (!fields.has('Source Link')) {
+    await createTextField(paths, project.id as string, 'Source Link');
+  }
+  if (!fields.has('Next Action')) {
+    await createTextField(paths, project.id as string, 'Next Action');
+  }
+  if (!fields.has('Short Note')) {
+    await createTextField(paths, project.id as string, 'Short Note');
+  }
+
+  return fetchProjectById(paths, project.id as string);
 }
 
 class DefaultGitHubSignalClient implements GitHubSignalClient {
+  async ensureProject(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    projectTitle = DEFAULT_PROJECT_TITLE,
+  ): Promise<EnsuredGitHubProject> {
+    const viewerProjects = await fetchViewerProjects(paths);
+    const viewer = viewerProjects.data?.viewer;
+
+    if (typeof viewer?.id !== 'string') {
+      throw new GitHubRuntimeError('Failed to load the GitHub viewer profile.');
+    }
+
+    const existingProject = (viewer.projectsV2?.nodes ?? []).find(
+      (project) => project.title === projectTitle,
+    );
+    const project =
+      existingProject === undefined
+        ? await createProject(paths, viewer.id, projectTitle)
+        : assertProjectNode(
+            existingProject,
+            'Failed to read the gh-agent GitHub Project.',
+          );
+    const hydratedProject = await ensureProjectFields(paths, project);
+
+    return {
+      wasCreated: existingProject === undefined,
+      ...buildProjectConfig(hydratedProject),
+    };
+  }
+
   async getSignalSummary(
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
   ): Promise<SignalSummary> {
+    assertConfiguredProject(config);
+
     const unreadCount = await getUnreadCount(paths);
-    const actionableCount = await getActionableCount(paths);
+    const project = await fetchProjectById(paths, config.projectId as string);
+    const projectConfig = buildProjectConfig(project);
+
+    if (
+      projectConfig.projectFieldIds.status !== config.projectFieldIds.status
+    ) {
+      throw new GitHubConfigError(
+        'Configured GitHub Project Status field changed. Run gh-agent init.',
+      );
+    }
 
     return {
       unreadCount,
-      actionableCount,
+      actionableCount: countActionableProjectItems(project),
     };
   }
 

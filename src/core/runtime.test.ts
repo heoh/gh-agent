@@ -135,7 +135,28 @@ describe('session state transitions', () => {
         currentMode: 'active',
         currentSessionId: 'sess_1',
       },
-      { agentId: 'gh-agent', pollIntervalMs: 30_000, debounceMs: 60_000 },
+      {
+        agentId: 'gh-agent',
+        pollIntervalMs: 30_000,
+        debounceMs: 60_000,
+        projectId: null,
+        projectTitle: null,
+        projectUrl: null,
+        projectFieldIds: {
+          status: null,
+          priority: null,
+          type: null,
+          sourceLink: null,
+          nextAction: null,
+          shortNote: null,
+        },
+        projectStatusOptionIds: {
+          ready: null,
+          doing: null,
+          waiting: null,
+          done: null,
+        },
+      },
       new Date('2026-04-17T17:00:00.000Z'),
     );
 

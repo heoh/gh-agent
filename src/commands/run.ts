@@ -1,5 +1,9 @@
 import { acquireLock, releaseLock } from '../core/lock.js';
-import { createGitHubSignalClient, GitHubAuthError } from '../core/github.js';
+import {
+  createGitHubSignalClient,
+  GitHubAuthError,
+  GitHubConfigError,
+} from '../core/github.js';
 import {
   createSessionId,
   evaluateWakeDecision,
@@ -47,7 +51,7 @@ export async function runCommand(
 
     const now = new Date();
     const previousAgentMode = state.currentMode;
-    const signals = await githubClient.getSignalSummary(paths);
+    const signals = await githubClient.getSignalSummary(paths, config);
     state = recordNotificationPoll(state, now);
     await saveSessionState(paths, state);
 
@@ -91,6 +95,10 @@ export async function runCommand(
         new Error(`GitHub authentication error: ${error.message}`),
         { exitCode: 3 },
       );
+    }
+
+    if (error instanceof GitHubConfigError) {
+      throw Object.assign(new Error(error.message), { exitCode: 2 });
     }
 
     throw error;

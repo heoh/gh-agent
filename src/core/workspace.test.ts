@@ -28,6 +28,23 @@ describe('workspace normalization', () => {
       agentId: 'gh-agent',
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      projectId: null,
+      projectTitle: null,
+      projectUrl: null,
+      projectFieldIds: {
+        status: null,
+        priority: null,
+        type: null,
+        sourceLink: null,
+        nextAction: null,
+        shortNote: null,
+      },
+      projectStatusOptionIds: {
+        ready: null,
+        doing: null,
+        waiting: null,
+        done: null,
+      },
     });
     expect(state).toEqual({
       agentId: 'gh-agent',
@@ -60,6 +77,23 @@ describe('workspace normalization', () => {
       agentId: 'custom-agent',
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      projectId: null,
+      projectTitle: null,
+      projectUrl: null,
+      projectFieldIds: {
+        status: null,
+        priority: null,
+        type: null,
+        sourceLink: null,
+        nextAction: null,
+        shortNote: null,
+      },
+      projectStatusOptionIds: {
+        ready: null,
+        doing: null,
+        waiting: null,
+        done: null,
+      },
     });
   });
 
@@ -74,6 +108,23 @@ describe('workspace normalization', () => {
       agentId: 'gh-agent',
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      projectId: null,
+      projectTitle: null,
+      projectUrl: null,
+      projectFieldIds: {
+        status: null,
+        priority: null,
+        type: null,
+        sourceLink: null,
+        nextAction: null,
+        shortNote: null,
+      },
+      projectStatusOptionIds: {
+        ready: null,
+        doing: null,
+        waiting: null,
+        done: null,
+      },
     });
   });
 

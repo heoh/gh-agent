@@ -1,9 +1,30 @@
 export type AgentMode = 'sleeping' | 'active';
 
+export interface ProjectFieldIds {
+  status: string | null;
+  priority: string | null;
+  type: string | null;
+  sourceLink: string | null;
+  nextAction: string | null;
+  shortNote: string | null;
+}
+
+export interface ProjectStatusOptionIds {
+  ready: string | null;
+  doing: string | null;
+  waiting: string | null;
+  done: string | null;
+}
+
 export interface Config {
   agentId: string;
   pollIntervalMs: number;
   debounceMs: number;
+  projectId: string | null;
+  projectTitle: string | null;
+  projectUrl: string | null;
+  projectFieldIds: ProjectFieldIds;
+  projectStatusOptionIds: ProjectStatusOptionIds;
 }
 
 export interface SessionState {
@@ -41,7 +62,38 @@ export interface GitHubAuthStatus {
   ghConfigDir: string;
 }
 
+export interface GitHubProjectConfig {
+  projectId: string;
+  projectTitle: string;
+  projectUrl: string;
+  projectFieldIds: {
+    status: string;
+    priority: string;
+    type: string;
+    sourceLink: string;
+    nextAction: string;
+    shortNote: string;
+  };
+  projectStatusOptionIds: {
+    ready: string;
+    doing: string;
+    waiting: string;
+    done: string;
+  };
+}
+
+export interface EnsuredGitHubProject extends GitHubProjectConfig {
+  wasCreated: boolean;
+}
+
 export interface GitHubSignalClient {
-  getSignalSummary(paths: { ghConfigDir: string }): Promise<SignalSummary>;
+  ensureProject(
+    paths: { ghConfigDir: string },
+    projectTitle: string,
+  ): Promise<EnsuredGitHubProject>;
+  getSignalSummary(
+    paths: { ghConfigDir: string },
+    config: Config,
+  ): Promise<SignalSummary>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }

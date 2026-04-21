@@ -1,13 +1,25 @@
 import {
+  saveConfig,
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
   getWorkspacePaths,
   pathExists,
 } from '../core/workspace.js';
+import {
+  createGitHubSignalClient,
+  GitHubAuthError,
+  GitHubConfigError,
+} from '../core/github.js';
+import type { GitHubSignalClient } from '../core/types.js';
 
-export async function initCommand(): Promise<void> {
+export async function initCommand(
+  dependencies: {
+    githubClient?: GitHubSignalClient;
+  } = {},
+): Promise<void> {
   const paths = getWorkspacePaths();
+  const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
 
   await ensureWorkspaceStructure(paths);
 
@@ -17,17 +29,57 @@ export async function initCommand(): Promise<void> {
   const hadState = await pathExists(paths.stateFile);
   await ensureSessionState(paths, config.agentId);
 
-  console.log('Initialized gh-agent workspace');
-  console.log(`Workspace: ${paths.root}`);
-  console.log(
-    `Config: ${hadConfig ? 'existing .gh-agent/config.json kept' : '.gh-agent/config.json created'}`,
-  );
-  console.log(
-    `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
-  );
-  console.log(
-    'Directories: work/, .gh-agent/, and .gh-agent/gh-config/ ensured',
-  );
-  console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
-  console.log('Next steps: gh-agent status, gh-agent run');
+  try {
+    const authStatus = await githubClient.getAuthStatus(paths);
+
+    if (authStatus.kind !== 'authenticated') {
+      throw new GitHubAuthError(authStatus.detail);
+    }
+
+    const project = await githubClient.ensureProject(paths, 'gh-agent');
+    const updatedConfig = {
+      ...config,
+      projectId: project.projectId,
+      projectTitle: project.projectTitle,
+      projectUrl: project.projectUrl,
+      projectFieldIds: project.projectFieldIds,
+      projectStatusOptionIds: project.projectStatusOptionIds,
+    };
+
+    await saveConfig(paths, updatedConfig);
+
+    console.log('Initialized gh-agent workspace');
+    console.log(`Workspace: ${paths.root}`);
+    console.log(
+      `Config: ${hadConfig ? 'existing .gh-agent/config.json updated' : '.gh-agent/config.json created'}`,
+    );
+    console.log(
+      `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
+    );
+    console.log(
+      'Directories: work/, .gh-agent/, and .gh-agent/gh-config/ ensured',
+    );
+    console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
+    console.log(
+      `GitHub Project: ${project.wasCreated ? 'created' : 'reused'} ${project.projectTitle}`,
+    );
+    console.log(`GitHub Project URL: ${project.projectUrl}`);
+    console.log(
+      'Project schema: Status is single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
+    );
+    console.log('Next steps: gh-agent status, gh-agent run');
+  } catch (error) {
+    if (error instanceof GitHubAuthError) {
+      throw Object.assign(
+        new Error(`GitHub authentication error: ${error.message}`),
+        { exitCode: 3 },
+      );
+    }
+
+    if (error instanceof GitHubConfigError) {
+      throw Object.assign(new Error(error.message), { exitCode: 2 });
+    }
+
+    throw error;
+  }
 }

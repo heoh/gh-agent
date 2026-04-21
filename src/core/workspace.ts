@@ -9,7 +9,12 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { Config, SessionState } from './types.js';
+import type {
+  Config,
+  ProjectFieldIds,
+  ProjectStatusOptionIds,
+  SessionState,
+} from './types.js';
 
 export interface WorkspacePaths {
   root: string;
@@ -22,10 +27,35 @@ export interface WorkspacePaths {
   workDir: string;
 }
 
+function createEmptyProjectFieldIds(): ProjectFieldIds {
+  return {
+    status: null,
+    priority: null,
+    type: null,
+    sourceLink: null,
+    nextAction: null,
+    shortNote: null,
+  };
+}
+
+function createEmptyProjectStatusOptionIds(): ProjectStatusOptionIds {
+  return {
+    ready: null,
+    doing: null,
+    waiting: null,
+    done: null,
+  };
+}
+
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
   pollIntervalMs: 30_000,
   debounceMs: 60_000,
+  projectId: null,
+  projectTitle: null,
+  projectUrl: null,
+  projectFieldIds: createEmptyProjectFieldIds(),
+  projectStatusOptionIds: createEmptyProjectStatusOptionIds(),
 };
 
 export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
@@ -63,6 +93,12 @@ export function createInitialSessionState(
 
 function normalizeConfig(raw: unknown): Config {
   const record = raw as Partial<Config>;
+  const projectFieldIds = record.projectFieldIds as
+    | Partial<ProjectFieldIds>
+    | undefined;
+  const projectStatusOptionIds = record.projectStatusOptionIds as
+    | Partial<ProjectStatusOptionIds>
+    | undefined;
 
   return {
     agentId:
@@ -81,6 +117,53 @@ function normalizeConfig(raw: unknown): Config {
       record.debounceMs >= 0
         ? record.debounceMs
         : DEFAULT_CONFIG.debounceMs,
+    projectId: typeof record.projectId === 'string' ? record.projectId : null,
+    projectTitle:
+      typeof record.projectTitle === 'string' ? record.projectTitle : null,
+    projectUrl:
+      typeof record.projectUrl === 'string' ? record.projectUrl : null,
+    projectFieldIds: {
+      status:
+        typeof projectFieldIds?.status === 'string'
+          ? projectFieldIds.status
+          : null,
+      priority:
+        typeof projectFieldIds?.priority === 'string'
+          ? projectFieldIds.priority
+          : null,
+      type:
+        typeof projectFieldIds?.type === 'string' ? projectFieldIds.type : null,
+      sourceLink:
+        typeof projectFieldIds?.sourceLink === 'string'
+          ? projectFieldIds.sourceLink
+          : null,
+      nextAction:
+        typeof projectFieldIds?.nextAction === 'string'
+          ? projectFieldIds.nextAction
+          : null,
+      shortNote:
+        typeof projectFieldIds?.shortNote === 'string'
+          ? projectFieldIds.shortNote
+          : null,
+    },
+    projectStatusOptionIds: {
+      ready:
+        typeof projectStatusOptionIds?.ready === 'string'
+          ? projectStatusOptionIds.ready
+          : null,
+      doing:
+        typeof projectStatusOptionIds?.doing === 'string'
+          ? projectStatusOptionIds.doing
+          : null,
+      waiting:
+        typeof projectStatusOptionIds?.waiting === 'string'
+          ? projectStatusOptionIds.waiting
+          : null,
+      done:
+        typeof projectStatusOptionIds?.done === 'string'
+          ? projectStatusOptionIds.done
+          : null,
+    },
   };
 }
 
@@ -184,6 +267,13 @@ export async function ensureConfig(paths: WorkspacePaths): Promise<Config> {
 
   await writeJsonAtomic(paths.configFile, config);
   return config;
+}
+
+export async function saveConfig(
+  paths: WorkspacePaths,
+  config: Config,
+): Promise<void> {
+  await writeJsonAtomic(paths.configFile, normalizeConfig(config));
 }
 
 export async function ensureSessionState(

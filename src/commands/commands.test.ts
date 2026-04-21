@@ -3,9 +3,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { readLockInfo } from '../core/lock.js';
-import { GitHubAuthError } from '../core/github.js';
+import { GitHubAuthError, GitHubConfigError } from '../core/github.js';
 import { getWorkspacePaths } from '../core/workspace.js';
-import type { GitHubSignalClient } from '../core/types.js';
+import type {
+  EnsuredGitHubProject,
+  GitHubSignalClient,
+} from '../core/types.js';
 import {
   captureConsoleLogs,
   setupWorkspaceTest,
@@ -21,7 +24,11 @@ function createGitHubClientStub(
   actionableCount: number,
 ): GitHubSignalClient {
   return {
-    async getSignalSummary() {
+    async ensureProject() {
+      return createEnsuredProjectStub();
+    },
+    async getSignalSummary(_paths, config) {
+      expect(config.projectId).toBe('proj_123');
       return {
         unreadCount,
         actionableCount,
@@ -37,11 +44,39 @@ function createGitHubClientStub(
   };
 }
 
+function createEnsuredProjectStub(
+  overrides: Partial<EnsuredGitHubProject> = {},
+): EnsuredGitHubProject {
+  return {
+    wasCreated: true,
+    projectId: 'proj_123',
+    projectTitle: 'gh-agent',
+    projectUrl: 'https://github.com/users/test/projects/1',
+    projectFieldIds: {
+      status: 'field_status',
+      priority: 'field_priority',
+      type: 'field_type',
+      sourceLink: 'field_source_link',
+      nextAction: 'field_next_action',
+      shortNote: 'field_short_note',
+    },
+    projectStatusOptionIds: {
+      ready: 'status_ready',
+      doing: 'status_doing',
+      waiting: 'status_waiting',
+      done: 'status_done',
+    },
+    ...overrides,
+  };
+}
+
 describe('commands', () => {
-  it('initCommand creates the workspace files and prints the next steps', async () => {
+  it('initCommand creates the workspace files, bootstraps the project, and prints the next steps', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand();
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     const config = JSON.parse(
@@ -53,16 +88,24 @@ describe('commands', () => {
     >;
 
     expect(config.agentId).toBe('gh-agent');
+    expect(config.projectId).toBe('proj_123');
+    expect(config.projectTitle).toBe('gh-agent');
     expect(state.currentMode).toBe('sleeping');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
+    expect(logs).toContain('GitHub Project: created gh-agent');
+    expect(logs).toContain(
+      'Project schema: Status is single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
+    );
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand();
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
     await statusCommand({
       githubClient: createGitHubClientStub(0, 0),
     });
@@ -72,6 +115,13 @@ describe('commands', () => {
       `Config: ${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
     expect(logs).toContain('Mode: sleeping');
+    expect(logs).toContain('Project: gh-agent');
+    expect(logs).toContain(
+      'Project URL: https://github.com/users/test/projects/1',
+    );
+    expect(logs).toContain('Unread notifications: 0');
+    expect(logs).toContain('Actionable cards: 0');
+    expect(logs).toContain('Actionable rule: Status in {Ready, Doing}');
     expect(logs).toContain('Lock: unlocked');
     expect(logs).toContain('Session: -');
     expect(logs.some((line) => line.startsWith('GH config dir: '))).toBe(true);
@@ -81,7 +131,9 @@ describe('commands', () => {
   it('runCommand wakes, persists state, records a decision, and releases the lock', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand();
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
     await runCommand({
       githubClient: createGitHubClientStub(1, 0),
     });
@@ -117,7 +169,9 @@ describe('commands', () => {
   it('runCommand respects cooldown and still releases the lock', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand();
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
     const paths = getWorkspacePaths(getWorkspaceRoot());
     await writeFile(
       paths.stateFile,
@@ -147,12 +201,68 @@ describe('commands', () => {
     expect(await readLockInfo(paths.lockFile)).toBeNull();
   });
 
+  it('initCommand reuses an existing gh-agent project without duplicating it', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: {
+        ...createGitHubClientStub(0, 0),
+        async ensureProject() {
+          return createEnsuredProjectStub({ wasCreated: false });
+        },
+      },
+    });
+
+    expect(logs).toContain('GitHub Project: reused gh-agent');
+  });
+
+  it('initCommand maps GitHub authentication failures to exit code 3', async () => {
+    await expect(
+      initCommand({
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async getAuthStatus(paths) {
+            return {
+              kind: 'unauthenticated',
+              detail: 'gh auth login required',
+              ghConfigDir: paths.ghConfigDir,
+            };
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+  });
+
+  it('initCommand fails with exit code 2 when the existing Status field schema conflicts', async () => {
+    await expect(
+      initCommand({
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async ensureProject() {
+            throw new GitHubConfigError('Status field must be single-select');
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      message: 'Status field must be single-select',
+      exitCode: 2,
+    });
+  });
+
   it('runCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand();
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
 
     await expect(
       runCommand({
         githubClient: {
+          async ensureProject() {
+            return createEnsuredProjectStub();
+          },
           async getSignalSummary() {
             throw new GitHubAuthError('gh auth login required');
           },
