@@ -27,6 +27,9 @@ function createGitHubClientStub(
     async login() {
       return;
     },
+    async refreshProjectScopes() {
+      return;
+    },
     async ensureProject() {
       return createEnsuredProjectStub();
     },
@@ -230,6 +233,9 @@ describe('commands', () => {
         async login() {
           loginCalled = true;
         },
+        async refreshProjectScopes() {
+          return;
+        },
         async getAuthStatus(paths) {
           authChecks += 1;
 
@@ -273,6 +279,39 @@ describe('commands', () => {
     });
   });
 
+  it('initCommand refreshes gh auth scopes when project access is missing', async () => {
+    const logs = captureConsoleLogs();
+    let refreshCalled = false;
+    let ensureCalls = 0;
+
+    await initCommand({
+      githubClient: {
+        ...createGitHubClientStub(0, 0),
+        async refreshProjectScopes() {
+          refreshCalled = true;
+        },
+        async ensureProject() {
+          ensureCalls += 1;
+
+          if (ensureCalls === 1) {
+            throw new Error(
+              "Your token has not been granted the required scopes to execute this query. The 'name' field requires one of the following scopes: ['read:project']",
+            );
+          }
+
+          return createEnsuredProjectStub();
+        },
+      },
+    });
+
+    expect(refreshCalled).toBe(true);
+    expect(ensureCalls).toBe(2);
+    expect(logs).toContain(
+      'GitHub Project scope is required for this workspace',
+    );
+    expect(logs).toContain('Refreshing gh auth scopes with project access...');
+  });
+
   it('initCommand fails with exit code 2 when the existing Status field schema conflicts', async () => {
     await expect(
       initCommand({
@@ -298,6 +337,9 @@ describe('commands', () => {
       runCommand({
         githubClient: {
           async login() {
+            return;
+          },
+          async refreshProjectScopes() {
             return;
           },
           async ensureProject() {

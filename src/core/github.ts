@@ -695,7 +695,16 @@ async function ensureProjectFields(
 class DefaultGitHubSignalClient implements GitHubSignalClient {
   async login(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<void> {
     await runGhInteractiveCommand(
-      ['auth', 'login', '--hostname', 'github.com'],
+      ['auth', 'login', '--hostname', 'github.com', '--scopes', 'project'],
+      paths,
+    );
+  }
+
+  async refreshProjectScopes(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  ): Promise<void> {
+    await runGhInteractiveCommand(
+      ['auth', 'refresh', '--hostname', 'github.com', '--scopes', 'project'],
       paths,
     );
   }

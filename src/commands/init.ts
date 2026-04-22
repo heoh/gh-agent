@@ -13,6 +13,14 @@ import {
 } from '../core/github.js';
 import type { GitHubSignalClient } from '../core/types.js';
 
+function isMissingProjectScopeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /required scopes|read:project|scope.*project|project.*scope/i.test(
+    message,
+  );
+}
+
 export async function initCommand(
   dependencies: {
     githubClient?: GitHubSignalClient;
@@ -44,7 +52,21 @@ export async function initCommand(
       throw new GitHubAuthError(authStatus.detail);
     }
 
-    const project = await githubClient.ensureProject(paths, 'gh-agent');
+    let project;
+
+    try {
+      project = await githubClient.ensureProject(paths, 'gh-agent');
+    } catch (error) {
+      if (!isMissingProjectScopeError(error)) {
+        throw error;
+      }
+
+      console.log('GitHub Project scope is required for this workspace');
+      console.log('Refreshing gh auth scopes with project access...');
+      await githubClient.refreshProjectScopes(paths);
+      project = await githubClient.ensureProject(paths, 'gh-agent');
+    }
+
     const updatedConfig = {
       ...config,
       projectId: project.projectId,
