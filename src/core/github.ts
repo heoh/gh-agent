@@ -660,10 +660,10 @@ async function createStatusField(
           name: "Status"
           dataType: SINGLE_SELECT
           singleSelectOptions: [
-            { name: "Ready", color: GREEN }
-            { name: "Doing", color: BLUE }
-            { name: "Waiting", color: YELLOW }
-            { name: "Done", color: GRAY }
+            { name: "Ready", color: GREEN, description: "Work ready to start now" }
+            { name: "Doing", color: BLUE, description: "Work currently in progress" }
+            { name: "Waiting", color: YELLOW, description: "Work blocked on outside input" }
+            { name: "Done", color: GRAY, description: "Work completed for now" }
           ]
         }
       ) {
@@ -711,10 +711,10 @@ async function updateStatusFieldOptions(
         input: {
           fieldId: $fieldId
           singleSelectOptions: [
-            { name: "Ready", color: GREEN }
-            { name: "Doing", color: BLUE }
-            { name: "Waiting", color: YELLOW }
-            { name: "Done", color: GRAY }
+            { name: "Ready", color: GREEN, description: "Work ready to start now" }
+            { name: "Doing", color: BLUE, description: "Work currently in progress" }
+            { name: "Waiting", color: YELLOW, description: "Work blocked on outside input" }
+            { name: "Done", color: GRAY, description: "Work completed for now" }
           ]
         }
       ) {
