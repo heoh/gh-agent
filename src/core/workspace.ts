@@ -27,6 +27,8 @@ export interface WorkspacePaths {
   workDir: string;
 }
 
+export class WorkspaceNotFoundError extends Error {}
+
 function createEmptyProjectFieldIds(): ProjectFieldIds {
   return {
     status: null,
@@ -71,6 +73,31 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
     ghConfigDir: path.join(stateDir, 'gh-config'),
     workDir: path.join(root, 'work'),
   };
+}
+
+export async function findWorkspaceRoot(
+  start = process.cwd(),
+): Promise<string> {
+  let current = path.resolve(start);
+
+  while (true) {
+    const configFile = path.join(current, '.gh-agent', 'config.json');
+
+    if (await pathExists(configFile)) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+
+    current = parent;
+  }
+
+  throw new WorkspaceNotFoundError(
+    `No gh-agent workspace found from ${start} or its parent directories.`,
+  );
 }
 
 export function createInitialSessionState(

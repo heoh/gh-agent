@@ -18,6 +18,7 @@ import {
   setupWorkspaceTest,
 } from '../test/test-helpers.js';
 import { initCommand } from './init.js';
+import { mailboxListCommand } from './mailbox/list.js';
 import { runCommand } from './run.js';
 import { statusCommand } from './status.js';
 
@@ -43,6 +44,28 @@ function createGitHubClientStub(
         unreadCount,
         actionableCount,
       };
+    },
+    async listMailboxNotifications(_paths, options) {
+      const notifications = [
+        {
+          id: 'thread_1',
+          repositoryFullName: 'acme/widgets',
+          title: 'Add mailbox list command',
+          reason: 'review_requested',
+          type: 'PullRequest',
+          updatedAt: '2026-04-20T10:00:00.000Z',
+        },
+        {
+          id: 'thread_2',
+          repositoryFullName: 'acme/docs',
+          title: 'Triage docs cleanup',
+          reason: 'mention',
+          type: 'Issue',
+          updatedAt: '2026-04-21T10:00:00.000Z',
+        },
+      ];
+
+      return notifications.slice(0, options?.limit ?? notifications.length);
     },
     async getAuthStatus(paths) {
       return {
@@ -212,6 +235,66 @@ describe('commands', () => {
     expect(await readLockInfo(paths.lockFile)).toBeNull();
   });
 
+  it('mailboxListCommand prints JSON with one object per line by default', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxListCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(`[
+  {"id":"thread_1","repositoryFullName":"acme/widgets","title":"Add mailbox list command","reason":"review_requested","type":"PullRequest","updatedAt":"2026-04-20T10:00:00.000Z"},
+  {"id":"thread_2","repositoryFullName":"acme/docs","title":"Triage docs cleanup","reason":"mention","type":"Issue","updatedAt":"2026-04-21T10:00:00.000Z"}
+]`);
+  });
+
+  it('mailboxListCommand respects the limit option', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxListCommand(
+      { limit: 1 },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(
+      `[
+  {"id":"thread_1","repositoryFullName":"acme/widgets","title":"Add mailbox list command","reason":"review_requested","type":"PullRequest","updatedAt":"2026-04-20T10:00:00.000Z"}
+]`,
+    );
+  });
+
+  it('mailboxListCommand prints an empty JSON array when no unread notifications exist', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxListCommand(
+      {},
+      {
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async listMailboxNotifications() {
+            return [];
+          },
+        },
+      },
+    );
+
+    expect(logs).toContain('[]');
+  });
+
   it('initCommand reuses an existing gh-agent project without duplicating it', async () => {
     const logs = captureConsoleLogs();
 
@@ -373,6 +456,9 @@ describe('commands', () => {
           async getSignalSummary() {
             throw new GitHubAuthError('gh auth login required');
           },
+          async listMailboxNotifications() {
+            return [];
+          },
           async getAuthStatus(paths) {
             return {
               kind: 'unauthenticated',
@@ -382,6 +468,33 @@ describe('commands', () => {
           },
         },
       }),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+  });
+
+  it('mailboxListCommand maps GitHub authentication failures to exit code 3', async () => {
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    await expect(
+      mailboxListCommand(
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async getAuthStatus(paths) {
+              return {
+                kind: 'unauthenticated',
+                detail: 'gh auth login required',
+                ghConfigDir: paths.ghConfigDir,
+              };
+            },
+          },
+        },
+      ),
     ).rejects.toMatchObject({
       message: 'GitHub authentication error: gh auth login required',
       exitCode: 3,

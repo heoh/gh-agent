@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -8,7 +9,9 @@ import {
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
+  findWorkspaceRoot,
   getWorkspacePaths,
+  WorkspaceNotFoundError,
 } from './workspace.js';
 
 const { getWorkspaceRoot } = setupWorkspaceTest();
@@ -170,5 +173,34 @@ describe('workspace normalization', () => {
     const state = await ensureSessionState(paths, 'gh-agent');
 
     expect(state).toEqual(createInitialSessionState('gh-agent'));
+  });
+
+  it('finds the workspace root from the workspace root itself', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await ensureWorkspaceStructure(paths);
+    await ensureConfig(paths);
+
+    await expect(findWorkspaceRoot(getWorkspaceRoot())).resolves.toBe(
+      getWorkspaceRoot(),
+    );
+  });
+
+  it('finds the nearest workspace root from a nested directory', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await ensureWorkspaceStructure(paths);
+    await ensureConfig(paths);
+
+    const nestedDir = path.join(getWorkspaceRoot(), 'work', 'triage', 'today');
+    await mkdir(nestedDir, { recursive: true });
+
+    await expect(findWorkspaceRoot(nestedDir)).resolves.toBe(
+      getWorkspaceRoot(),
+    );
+  });
+
+  it('fails when no workspace exists in current or parent directories', async () => {
+    await expect(
+      findWorkspaceRoot(path.join(getWorkspaceRoot(), 'outside')),
+    ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
   });
 });

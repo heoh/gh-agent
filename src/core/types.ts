@@ -49,6 +49,15 @@ export interface SignalSummary {
   actionableCount: number;
 }
 
+export interface MailboxNotification {
+  id: string;
+  repositoryFullName: string;
+  title: string;
+  reason: string;
+  type: string | null;
+  updatedAt: string | null;
+}
+
 export interface WakeDecision {
   shouldWake: boolean;
   blockedByCooldown: boolean;
@@ -97,5 +106,9 @@ export interface GitHubSignalClient {
     paths: { ghConfigDir: string },
     config: Config,
   ): Promise<SignalSummary>;
+  listMailboxNotifications(
+    paths: { ghConfigDir: string },
+    options?: { limit?: number },
+  ): Promise<MailboxNotification[]>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }
