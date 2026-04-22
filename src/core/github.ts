@@ -92,11 +92,28 @@ interface CreateFieldResponse {
   };
 }
 
+interface UpdateFieldResponse {
+  data?: {
+    updateProjectV2Field?: {
+      projectV2Field?: ProjectFieldNode | null;
+    } | null;
+  };
+}
+
 export class GitHubAuthError extends Error {}
 
 export class GitHubRuntimeError extends Error {}
 
 export class GitHubConfigError extends Error {}
+
+export class GitHubBootstrapError extends Error {
+  constructor(
+    message: string,
+    readonly stage: 'create_project' | 'load_project' | 'bootstrap_fields',
+  ) {
+    super(message);
+  }
+}
 
 function createGhEnvironment(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
@@ -189,6 +206,10 @@ async function runGhGraphql<T>(
 
   const { stdout } = await runGhCommand(args, paths);
   return JSON.parse(stdout) as T;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function countUnreadNotifications(stdout: string): number {
@@ -325,6 +346,19 @@ function requireStatusOptionIds(
     waiting,
     done,
   };
+}
+
+function hasRequiredStatusOptions(field: ProjectFieldNode): boolean {
+  try {
+    void requireStatusOptionIds(field);
+    return true;
+  } catch (error) {
+    if (error instanceof GitHubConfigError) {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 function buildProjectConfig(project: ProjectNode): GitHubProjectConfig {
@@ -507,6 +541,35 @@ async function fetchProjectById(
   );
 }
 
+async function fetchProjectByIdWithRetry(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  attempts = 5,
+): Promise<ProjectNode> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchProjectById(paths, projectId);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === attempts) {
+        break;
+      }
+
+      await sleep(250 * attempt);
+    }
+  }
+
+  throw new GitHubBootstrapError(
+    `GitHub Project was created but could not be loaded yet: ${
+      lastError instanceof Error ? lastError.message : 'Unknown GitHub error'
+    }`,
+    'load_project',
+  );
+}
+
 async function createProject(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   ownerId: string,
@@ -638,11 +701,69 @@ async function createStatusField(
   return field;
 }
 
+async function updateStatusFieldOptions(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  fieldId: string,
+): Promise<ProjectFieldNode> {
+  const query = `
+    mutation UpdateStatusField($fieldId: ID!) {
+      updateProjectV2Field(
+        input: {
+          fieldId: $fieldId
+          singleSelectOptions: [
+            { name: "Ready", color: GREEN }
+            { name: "Doing", color: BLUE }
+            { name: "Waiting", color: YELLOW }
+            { name: "Done", color: GRAY }
+          ]
+        }
+      ) {
+        projectV2Field {
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<UpdateFieldResponse>(query, paths, {
+    fieldId,
+  });
+  const field = response.data?.updateProjectV2Field?.projectV2Field;
+
+  if (
+    field === null ||
+    field === undefined ||
+    typeof field.id !== 'string' ||
+    typeof field.name !== 'string'
+  ) {
+    throw new GitHubRuntimeError(
+      'Failed to update GitHub Project field Status.',
+    );
+  }
+
+  return field;
+}
+
 async function ensureProjectFields(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   project: ProjectNode,
 ): Promise<ProjectNode> {
-  const fields = createProjectFieldMap(project);
+  const projectId =
+    typeof project.id === 'string'
+      ? project.id
+      : (() => {
+          throw new GitHubRuntimeError('GitHub Project is missing an id.');
+        })();
+  const hydratedProject = await fetchProjectByIdWithRetry(paths, projectId);
+  const fields = createProjectFieldMap(hydratedProject);
 
   const existingStatus = fields.get('Status');
   if (
@@ -670,26 +791,31 @@ async function ensureProjectFields(
   }
 
   if (existingStatus === undefined) {
-    await createStatusField(paths, project.id as string);
+    await createStatusField(paths, projectId);
+  } else if (!hasRequiredStatusOptions(existingStatus)) {
+    await updateStatusFieldOptions(
+      paths,
+      requireFieldId(existingStatus, 'Status'),
+    );
   }
 
   if (!fields.has('Priority')) {
-    await createTextField(paths, project.id as string, 'Priority');
+    await createTextField(paths, projectId, 'Priority');
   }
   if (!fields.has('Type')) {
-    await createTextField(paths, project.id as string, 'Type');
+    await createTextField(paths, projectId, 'Type');
   }
   if (!fields.has('Source Link')) {
-    await createTextField(paths, project.id as string, 'Source Link');
+    await createTextField(paths, projectId, 'Source Link');
   }
   if (!fields.has('Next Action')) {
-    await createTextField(paths, project.id as string, 'Next Action');
+    await createTextField(paths, projectId, 'Next Action');
   }
   if (!fields.has('Short Note')) {
-    await createTextField(paths, project.id as string, 'Short Note');
+    await createTextField(paths, projectId, 'Short Note');
   }
 
-  return fetchProjectById(paths, project.id as string);
+  return fetchProjectByIdWithRetry(paths, projectId);
 }
 
 class DefaultGitHubSignalClient implements GitHubSignalClient {
@@ -723,14 +849,42 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     const existingProject = (viewer.projectsV2?.nodes ?? []).find(
       (project) => project.title === projectTitle,
     );
-    const project =
-      existingProject === undefined
-        ? await createProject(paths, viewer.id, projectTitle)
-        : assertProjectNode(
-            existingProject,
-            'Failed to read the gh-agent GitHub Project.',
-          );
-    const hydratedProject = await ensureProjectFields(paths, project);
+    let project: ProjectNode;
+
+    if (existingProject === undefined) {
+      try {
+        project = await createProject(paths, viewer.id, projectTitle);
+      } catch (error) {
+        throw new GitHubBootstrapError(
+          `Failed to create the gh-agent GitHub Project: ${
+            error instanceof Error ? error.message : 'Unknown GitHub error'
+          }`,
+          'create_project',
+        );
+      }
+    } else {
+      project = assertProjectNode(
+        existingProject,
+        'Failed to read the gh-agent GitHub Project.',
+      );
+    }
+
+    let hydratedProject: ProjectNode;
+
+    try {
+      hydratedProject = await ensureProjectFields(paths, project);
+    } catch (error) {
+      if (error instanceof GitHubBootstrapError) {
+        throw error;
+      }
+
+      throw new GitHubBootstrapError(
+        `Failed while preparing GitHub Project fields: ${
+          error instanceof Error ? error.message : 'Unknown GitHub error'
+        }`,
+        'bootstrap_fields',
+      );
+    }
 
     return {
       wasCreated: existingProject === undefined,

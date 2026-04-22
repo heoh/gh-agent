@@ -3,7 +3,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { readLockInfo } from '../core/lock.js';
-import { GitHubAuthError, GitHubConfigError } from '../core/github.js';
+import {
+  GitHubAuthError,
+  GitHubBootstrapError,
+  GitHubConfigError,
+} from '../core/github.js';
 import { getWorkspacePaths } from '../core/workspace.js';
 import type {
   EnsuredGitHubProject,
@@ -97,6 +101,7 @@ describe('commands', () => {
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
     expect(state.currentMode).toBe('sleeping');
+    expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
     expect(logs).toContain('GitHub Project: created gh-agent');
@@ -310,6 +315,26 @@ describe('commands', () => {
       'GitHub Project scope is required for this workspace',
     );
     expect(logs).toContain('Refreshing gh auth scopes with project access...');
+  });
+
+  it('initCommand includes the failing bootstrap stage in the error message', async () => {
+    await expect(
+      initCommand({
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async ensureProject() {
+            throw new GitHubBootstrapError(
+              'GitHub Project was created but could not be loaded yet: not found',
+              'load_project',
+            );
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'GitHub Project bootstrap failed during load_project: GitHub Project was created but could not be loaded yet: not found',
+      exitCode: 2,
+    });
   });
 
   it('initCommand fails with exit code 2 when the existing Status field schema conflicts', async () => {

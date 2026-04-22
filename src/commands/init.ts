@@ -9,6 +9,7 @@ import {
 import {
   createGitHubSignalClient,
   GitHubAuthError,
+  GitHubBootstrapError,
   GitHubConfigError,
 } from '../core/github.js';
 import type { GitHubSignalClient } from '../core/types.js';
@@ -53,6 +54,8 @@ export async function initCommand(
     }
 
     let project;
+
+    console.log('Ensuring GitHub Project...');
 
     try {
       project = await githubClient.ensureProject(paths, 'gh-agent');
@@ -108,6 +111,15 @@ export async function initCommand(
 
     if (error instanceof GitHubConfigError) {
       throw Object.assign(new Error(error.message), { exitCode: 2 });
+    }
+
+    if (error instanceof GitHubBootstrapError) {
+      throw Object.assign(
+        new Error(
+          `GitHub Project bootstrap failed during ${error.stage}: ${error.message}`,
+        ),
+        { exitCode: 2 },
+      );
     }
 
     throw error;
