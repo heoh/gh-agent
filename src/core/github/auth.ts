@@ -36,7 +36,7 @@ function runGhCommand(
           const message = stderrText.length > 0 ? stderrText : error.message;
 
           if (
-            /not logged into|authentication failed|run:\s+gh auth login|gh auth login|gh_token/i.test(
+            /not logged into|authentication failed|failed to log in|invalid token|token .* invalid|run:\s+gh auth login|gh auth login|gh_token/i.test(
               message,
             )
           ) {

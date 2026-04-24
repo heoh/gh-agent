@@ -123,6 +123,22 @@ function createProjectNode(items: unknown[]): { data: { node: unknown } } {
   };
 }
 
+function createProjectValueNode(items: unknown[]): {
+  id: string;
+  title: string;
+  url: string;
+  fields: { nodes: unknown[] };
+  items: { nodes: unknown[] };
+} {
+  return createProjectNode(items).data.node as {
+    id: string;
+    title: string;
+    url: string;
+    fields: { nodes: unknown[] };
+    items: { nodes: unknown[] };
+  };
+}
+
 beforeEach(() => {
   execFileMock.mockReset();
   spawnMock.mockReset();
@@ -148,6 +164,39 @@ beforeEach(() => {
 });
 
 describe('parseMailboxNotificationsPayload', () => {
+  it('classifies invalid gh auth status output as unauthenticated', async () => {
+    execFileMock.mockImplementation((_file, args, _options, callback) => {
+      if (
+        Array.isArray(args) &&
+        args[0] === 'auth' &&
+        args[1] === 'status' &&
+        args[2] === '--hostname' &&
+        args[3] === 'github.com'
+      ) {
+        callback(
+          new Error('exit 1'),
+          '',
+          'github.com\n  X Failed to log in to github.com account test\n  - The token in /tmp/hosts.yml is invalid.\n',
+        );
+        return;
+      }
+
+      callback(null, '', '');
+    });
+
+    const client = createGitHubSignalClient();
+    const authStatus = await client.getAuthStatus({
+      ghConfigDir: '/tmp/gh-config',
+    });
+
+    expect(authStatus).toEqual({
+      kind: 'unauthenticated',
+      detail:
+        'github.com\n  X Failed to log in to github.com account test\n  - The token in /tmp/hosts.yml is invalid.',
+      ghConfigDir: '/tmp/gh-config',
+    });
+  });
+
   it('parses standard notification payloads', () => {
     const notifications = parseMailboxNotificationsPayload(
       JSON.stringify([
@@ -283,6 +332,58 @@ describe('parseMailboxNotificationsPayload', () => {
 });
 
 describe('GitHub mailbox mutations', () => {
+  it('ensureProject accepts raw octokit graphql responses without a data wrapper', async () => {
+    const project = createProjectValueNode([]);
+
+    octokitGraphqlMock
+      .mockResolvedValueOnce({
+        viewer: {
+          id: 'viewer_123',
+          projectsV2: {
+            nodes: [project],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        node: project,
+      })
+      .mockResolvedValueOnce({
+        node: project,
+      });
+
+    const client = createGitHubSignalClient();
+    const ensuredProject = await client.ensureProject(
+      { ghConfigDir: '/tmp/gh-config-raw' },
+      'gh-agent',
+    );
+
+    expect(ensuredProject).toEqual({
+      wasCreated: false,
+      projectId: 'proj_123',
+      projectTitle: 'gh-agent',
+      projectUrl: 'https://github.com/users/test/projects/1',
+      projectFieldIds: {
+        status: 'field_status',
+        priority: 'field_priority',
+        type: 'field_type',
+        executionClass: 'field_execution_class',
+        sourceLink: 'field_source_link',
+        nextAction: 'field_next_action',
+        shortNote: 'field_short_note',
+      },
+      projectStatusOptionIds: {
+        ready: 'status_ready',
+        doing: 'status_doing',
+        waiting: 'status_waiting',
+        done: 'status_done',
+      },
+      projectExecutionClassOptionIds: {
+        light: 'execution_class_light',
+        heavy: 'execution_class_heavy',
+      },
+    });
+  });
+
   it('resolveMailboxThreadDetail loads the canonical thread URL and content node id', async () => {
     octokitRequestMock
       .mockResolvedValueOnce({

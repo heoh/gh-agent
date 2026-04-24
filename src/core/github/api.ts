@@ -161,8 +161,19 @@ class OctokitGitHubApiClient implements GitHubApiClient {
   ): Promise<T> {
     try {
       const octokit = await this.getOctokit(paths);
+      const response = await octokit.graphql<unknown>(query, variables);
 
-      return await octokit.graphql<T>(query, variables);
+      if (
+        typeof response === 'object' &&
+        response !== null &&
+        'data' in response
+      ) {
+        return response as T;
+      }
+
+      return {
+        data: response,
+      } as T;
     } catch (error) {
       this.handleError(paths, error);
     }
