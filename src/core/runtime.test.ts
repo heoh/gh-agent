@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildRichSessionPrompt,
   createSessionId,
   evaluateWakeDecision,
   finishSession,
   recordNotificationPoll,
+  resolveAgentExecution,
+  selectAgentClass,
   startSession,
 } from './runtime.js';
 import { createInitialSessionState } from './workspace.js';
@@ -180,5 +183,113 @@ describe('session state transitions', () => {
     );
 
     expect(state.lastNotificationPollAt).toBe('2026-04-17T17:02:00.000Z');
+  });
+});
+
+describe('agent selection and prompt', () => {
+  it('selects heavy only when mailbox is empty and all actionable tasks are heavy', () => {
+    const selected = selectAgentClass(0, [
+      {
+        id: 'item_1',
+        title: 'Heavy task',
+        status: 'ready',
+        priority: 'P1',
+        type: 'execution',
+        executionClass: 'heavy',
+        sourceLink: 'https://github.com/acme/repo/issues/1',
+      },
+    ]);
+
+    expect(selected).toBe('heavy');
+  });
+
+  it('selects default when unread mailbox exists', () => {
+    const selected = selectAgentClass(1, [
+      {
+        id: 'item_1',
+        title: 'Heavy task',
+        status: 'ready',
+        priority: 'P1',
+        type: 'execution',
+        executionClass: 'heavy',
+        sourceLink: 'https://github.com/acme/repo/issues/1',
+      },
+    ]);
+
+    expect(selected).toBe('default');
+  });
+
+  it('falls back to the default command when heavy command is missing', () => {
+    const execution = resolveAgentExecution(
+      {
+        agentId: 'gh-agent',
+        defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+        heavyAgentCommand: null,
+        pollIntervalMs: 30_000,
+        debounceMs: 60_000,
+        projectId: null,
+        projectTitle: null,
+        projectUrl: null,
+        projectFieldIds: {
+          status: null,
+          priority: null,
+          type: null,
+          executionClass: null,
+          sourceLink: null,
+          nextAction: null,
+          shortNote: null,
+        },
+        projectStatusOptionIds: {
+          ready: null,
+          doing: null,
+          waiting: null,
+          done: null,
+        },
+        projectExecutionClassOptionIds: {
+          light: null,
+          heavy: null,
+        },
+      },
+      'heavy',
+    );
+
+    expect(execution.executedAgentClass).toBe('default');
+    expect(execution.command).toBe('codex exec --full-auto "$prompt"');
+  });
+
+  it('builds a rich prompt with operation guidance and dynamic context', () => {
+    const prompt = buildRichSessionPrompt({
+      sessionId: 'sess_123',
+      wakeReason: 'wake triggered by unread',
+      triggerKind: 'unread',
+      selectedAgentClass: 'default',
+      executedAgentClass: 'default',
+      unreadCount: 2,
+      actionableCount: 1,
+      mailboxSamples: [
+        {
+          id: 'thread_1',
+          repositoryFullName: 'acme/widgets',
+          title: 'Add mailbox list command',
+          reason: 'review_requested',
+        },
+      ],
+      actionableTaskSamples: [
+        {
+          id: 'item_1',
+          status: 'ready',
+          executionClass: 'light',
+          title: 'Implement run loop',
+        },
+      ],
+    });
+
+    expect(prompt).toContain('mailbox triage -> 2) actionable task 처리');
+    expect(prompt).toContain('npx gh-agent mailbox list');
+    expect(prompt).toContain('gh CLI를 사용해 이슈/PR 코멘트');
+    expect(prompt).toContain('work/ 포함 로컬 파일시스템');
+    expect(prompt).toContain('sessionId: sess_123');
+    expect(prompt).toContain('thread_1 | acme/widgets');
+    expect(prompt).toContain('item_1 | ready | class=light');
   });
 });

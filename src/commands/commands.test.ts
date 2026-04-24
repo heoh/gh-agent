@@ -374,6 +374,10 @@ describe('commands', () => {
     });
     await runCommand({
       githubClient: createGitHubClientStub(1, 0),
+      maxPollCycles: 1,
+      async executeAgentSession() {
+        return 0;
+      },
     });
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
@@ -395,6 +399,9 @@ describe('commands', () => {
     expect(decisions).toHaveLength(1);
     expect(decisions[0].shouldWake).toBe(true);
     expect(typeof decisions[0].createdSessionId).toBe('string');
+    expect(decisions[0].selectedAgentClass).toBe('default');
+    expect(decisions[0].executedAgentClass).toBe('default');
+    expect(decisions[0].sessionExitCode).toBe(0);
     expect(await readLockInfo(paths.lockFile)).toBeNull();
     expect(logs).toContain('Polling started');
     expect(logs.some((line) => line.startsWith('Session started: sess_'))).toBe(
@@ -424,6 +431,10 @@ describe('commands', () => {
 
     await runCommand({
       githubClient: createGitHubClientStub(1, 0),
+      maxPollCycles: 1,
+      async executeAgentSession() {
+        return 0;
+      },
     });
 
     const decisions = (await readFile(paths.wakeDecisionsFile, 'utf8'))
@@ -437,6 +448,39 @@ describe('commands', () => {
       false,
     );
     expect(await readLockInfo(paths.lockFile)).toBeNull();
+  });
+
+  it('runCommand records a session failure and still returns to sleeping mode', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await runCommand({
+      githubClient: createGitHubClientStub(1, 0),
+      maxPollCycles: 1,
+      async executeAgentSession() {
+        throw new Error('spawn failed');
+      },
+    });
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const state = JSON.parse(await readFile(paths.stateFile, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const decisions = (await readFile(paths.wakeDecisionsFile, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(state.currentMode).toBe('sleeping');
+    expect(decisions.at(-1)?.shouldWake).toBe(true);
+    expect(decisions.at(-1)?.sessionExitCode).toBeNull();
+    expect(logs.some((line) => line.includes('Session command failed'))).toBe(
+      true,
+    );
+    expect(logs).toContain('Session ended');
   });
 
   it('mailboxListCommand prints JSON with one object per line by default', async () => {
@@ -1219,6 +1263,7 @@ describe('commands', () => {
             };
           },
         },
+        maxPollCycles: 1,
       }),
     ).rejects.toMatchObject({
       message: 'GitHub authentication error: gh auth login required',

@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+
 import { acquireLock, releaseLock } from '../core/lock.js';
 import {
   createGitHubSignalClient,
@@ -6,9 +8,14 @@ import {
 } from '../core/github.js';
 import {
   createSessionId,
+  buildRichSessionPrompt,
   evaluateWakeDecision,
   finishSession,
   recordNotificationPoll,
+  resolveAgentExecution,
+  selectAgentClass,
+  PROMPT_MAILBOX_SAMPLE_LIMIT,
+  PROMPT_TASK_SAMPLE_LIMIT,
   startSession,
 } from '../core/runtime.js';
 import type { GitHubSignalClient } from '../core/types.js';
@@ -21,17 +28,61 @@ import {
   saveSessionState,
 } from '../core/workspace.js';
 
+async function defaultExecuteAgentSession(input: {
+  command: string;
+  prompt: string;
+  cwd: string;
+}): Promise<number | null> {
+  return await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(input.command, {
+      cwd: input.cwd,
+      env: {
+        ...process.env,
+        prompt: input.prompt,
+      },
+      shell: true,
+      stdio: 'inherit',
+    });
+
+    child.once('error', reject);
+    child.once('close', (code) => {
+      resolve(code);
+    });
+  });
+}
+
+async function sleep(durationMs: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
+
 export async function runCommand(
   dependencies: {
     githubClient?: GitHubSignalClient;
+    maxPollCycles?: number;
+    executeAgentSession?: (input: {
+      command: string;
+      prompt: string;
+      cwd: string;
+    }) => Promise<number | null>;
   } = {},
 ): Promise<void> {
   const paths = getWorkspacePaths();
   const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
+  const executeAgentSession =
+    dependencies.executeAgentSession ?? defaultExecuteAgentSession;
 
   await ensureWorkspaceStructure(paths);
   const config = await ensureConfig(paths);
   let state = await ensureSessionState(paths, config.agentId);
+  let shouldStop = false;
+  let completedPollCycles = 0;
+  const maxPollCycles = dependencies.maxPollCycles;
+
+  const stopHandler = () => {
+    shouldStop = true;
+  };
 
   try {
     await acquireLock(paths.lockFile, paths.root);
@@ -47,48 +98,143 @@ export async function runCommand(
   }
 
   try {
-    console.log('Polling started');
+    process.on('SIGINT', stopHandler);
+    process.on('SIGTERM', stopHandler);
 
-    const now = new Date();
-    const previousAgentMode = state.currentMode;
-    const signals = await githubClient.getSignalSummary(paths, config);
-    state = recordNotificationPoll(state, now);
-    await saveSessionState(paths, state);
+    while (!shouldStop) {
+      console.log('Polling started');
 
-    const wakeDecision = evaluateWakeDecision(state, signals, now);
-    let createdSessionId: string | null = null;
-
-    console.log(
-      `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
-    );
-
-    if (wakeDecision.shouldWake) {
-      const sessionStartAt = new Date();
-      const sessionId = createSessionId(sessionStartAt);
-
-      state = startSession(state, sessionId, sessionStartAt);
+      const now = new Date();
+      const previousAgentMode = state.currentMode;
+      const signals = await githubClient.getSignalSummary(paths, config);
+      state = recordNotificationPoll(state, now);
       await saveSessionState(paths, state);
-      console.log(`Session started: ${sessionId}`);
-      createdSessionId = sessionId;
 
-      const sessionEndAt = new Date();
-      state = finishSession(state, config, sessionEndAt);
-      console.log('Session ended');
+      const wakeDecision = evaluateWakeDecision(state, signals, now);
+      let createdSessionId: string | null = null;
+      let selectedAgentClass: 'default' | 'heavy' | null = null;
+      let executedAgentClass: 'default' | 'heavy' | null = null;
+      let agentCommand: string | null = null;
+      let sessionExitCode: number | null = null;
+
+      console.log(
+        `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
+      );
+
+      if (wakeDecision.shouldWake) {
+        const mailboxForSelection = await githubClient.listMailboxNotifications(
+          paths,
+          { limit: 1 },
+        );
+        const actionableTasks = await githubClient.listTaskCards(
+          paths,
+          config,
+          {
+            statuses: ['ready', 'doing'],
+          },
+        );
+        selectedAgentClass = selectAgentClass(
+          mailboxForSelection.length,
+          actionableTasks,
+        );
+        const execution = resolveAgentExecution(config, selectedAgentClass);
+        executedAgentClass = execution.executedAgentClass;
+        agentCommand = execution.command;
+
+        console.log(`Selected agent: ${selectedAgentClass}`);
+        console.log(`Executing agent command class: ${executedAgentClass}`);
+
+        const mailboxSamples = await githubClient.listMailboxNotifications(
+          paths,
+          { limit: PROMPT_MAILBOX_SAMPLE_LIMIT },
+        );
+
+        const sessionStartAt = new Date();
+        const sessionId = createSessionId(sessionStartAt);
+
+        const prompt = buildRichSessionPrompt({
+          sessionId,
+          wakeReason: wakeDecision.reason,
+          triggerKind: wakeDecision.triggerKind,
+          selectedAgentClass,
+          executedAgentClass,
+          unreadCount: signals.unreadCount,
+          actionableCount: signals.actionableCount,
+          mailboxSamples: mailboxSamples.map((sample) => ({
+            id: sample.id,
+            repositoryFullName: sample.repositoryFullName,
+            title: sample.title,
+            reason: sample.reason,
+          })),
+          actionableTaskSamples: actionableTasks
+            .slice(0, PROMPT_TASK_SAMPLE_LIMIT)
+            .map((task) => ({
+              id: task.id,
+              status: task.status,
+              executionClass: task.executionClass,
+              title: task.title,
+            })),
+        });
+
+        state = startSession(state, sessionId, sessionStartAt);
+        await saveSessionState(paths, state);
+        console.log(`Session started: ${sessionId}`);
+        createdSessionId = sessionId;
+
+        try {
+          sessionExitCode = await executeAgentSession({
+            command: execution.command,
+            prompt,
+            cwd: paths.root,
+          });
+          console.log(
+            `Session command exited with code ${sessionExitCode ?? 'null'}`,
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.log(`Session command failed: ${message}`);
+          sessionExitCode = null;
+        } finally {
+          const sessionEndAt = new Date();
+          state = finishSession(state, config, sessionEndAt);
+          await saveSessionState(paths, state);
+          console.log('Session ended');
+        }
+      }
+
+      await saveSessionState(paths, state);
+      await appendWakeDecision(paths, {
+        evaluatedAt: now.toISOString(),
+        previousAgentMode,
+        unreadNotificationCount: signals.unreadCount,
+        actionableCardCount: signals.actionableCount,
+        shouldWake: wakeDecision.shouldWake,
+        blockedByCooldown: wakeDecision.blockedByCooldown,
+        reason: wakeDecision.reason,
+        triggerKind: wakeDecision.triggerKind,
+        createdSessionId,
+        selectedAgentClass,
+        executedAgentClass,
+        agentCommand,
+        sessionExitCode,
+      });
+      console.log('Polling complete');
+
+      completedPollCycles += 1;
+      if (
+        typeof maxPollCycles === 'number' &&
+        completedPollCycles >= maxPollCycles
+      ) {
+        break;
+      }
+
+      if (shouldStop) {
+        break;
+      }
+
+      await sleep(config.pollIntervalMs);
     }
-
-    await saveSessionState(paths, state);
-    await appendWakeDecision(paths, {
-      evaluatedAt: now.toISOString(),
-      previousAgentMode,
-      unreadNotificationCount: signals.unreadCount,
-      actionableCardCount: signals.actionableCount,
-      shouldWake: wakeDecision.shouldWake,
-      blockedByCooldown: wakeDecision.blockedByCooldown,
-      reason: wakeDecision.reason,
-      triggerKind: wakeDecision.triggerKind,
-      createdSessionId,
-    });
-    console.log('Polling complete');
   } catch (error) {
     if (error instanceof GitHubAuthError) {
       throw Object.assign(
@@ -103,6 +249,8 @@ export async function runCommand(
 
     throw error;
   } finally {
+    process.off('SIGINT', stopHandler);
+    process.off('SIGTERM', stopHandler);
     await releaseLock(paths.lockFile);
   }
 }

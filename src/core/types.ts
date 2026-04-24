@@ -1,4 +1,5 @@
 export type AgentMode = 'sleeping' | 'active';
+export type AgentClass = 'default' | 'heavy';
 
 export interface ProjectFieldIds {
   status: string | null;
