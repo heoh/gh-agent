@@ -51,12 +51,6 @@ async function defaultExecuteAgentSession(input: {
   });
 }
 
-async function sleep(durationMs: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, durationMs);
-  });
-}
-
 export async function runCommand(
   dependencies: {
     githubClient?: GitHubSignalClient;
@@ -77,11 +71,21 @@ export async function runCommand(
   const config = await ensureConfig(paths);
   let state = await ensureSessionState(paths, config.agentId);
   let shouldStop = false;
+  let hasLoggedStop = false;
   let completedPollCycles = 0;
   const maxPollCycles = dependencies.maxPollCycles;
+  let interruptPollSleep: (() => void) | null = null;
 
   const stopHandler = () => {
+    if (!hasLoggedStop) {
+      console.log('Stopping...');
+      hasLoggedStop = true;
+    }
     shouldStop = true;
+    if (interruptPollSleep !== null) {
+      interruptPollSleep();
+      interruptPollSleep = null;
+    }
   };
 
   try {
@@ -233,7 +237,17 @@ export async function runCommand(
         break;
       }
 
-      await sleep(config.pollIntervalMs);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          interruptPollSleep = null;
+          resolve();
+        }, config.pollIntervalMs);
+
+        interruptPollSleep = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
     }
   } catch (error) {
     if (error instanceof GitHubAuthError) {

@@ -285,7 +285,7 @@ describe('agent selection and prompt', () => {
     });
 
     expect(prompt).toContain('mailbox triage -> 2) actionable task 처리');
-    expect(prompt).toContain('npx gh-agent mailbox list');
+    expect(prompt).toContain('gh-agent mailbox list');
     expect(prompt).toContain('gh CLI를 사용해 이슈/PR 코멘트');
     expect(prompt).toContain('work/ 포함 로컬 파일시스템');
     expect(prompt).toContain('sessionId: sess_123');
