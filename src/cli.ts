@@ -16,6 +16,7 @@ import { runCommand } from './commands/run.js';
 import { statusCommand } from './commands/status.js';
 import { taskCreateCommand } from './commands/task/create.js';
 import {
+  parseTaskExecutionClassOption,
   parseTaskPriorityOption,
   parseTaskStatusFilterOption,
   parseTaskStatusOption,
@@ -143,16 +144,23 @@ function createProgram(): Command {
       parseTaskPriorityOption,
     )
     .option('--type <type>', 'Filter by task type.', parseTaskTypeOption)
+    .option(
+      '--execution-class <executionClass>',
+      'Filter by execution class.',
+      parseTaskExecutionClassOption,
+    )
     .action(
       async (options: {
         status: Array<'ready' | 'doing' | 'waiting' | 'done'>;
         priority?: 'P1' | 'P2' | 'P3';
         type?: 'interaction' | 'execution';
+        executionClass?: 'light' | 'heavy';
       }) =>
         taskListCommand({
           statuses: options.status,
           priority: options.priority,
           type: options.type,
+          executionClass: options.executionClass,
         }),
     );
 
@@ -169,6 +177,11 @@ function createProgram(): Command {
     .requiredOption('--status <status>', 'Task status.', parseTaskStatusOption)
     .option('--priority <priority>', 'Task priority.', parseTaskPriorityOption)
     .option('--type <type>', 'Task type.', parseTaskTypeOption)
+    .option(
+      '--execution-class <executionClass>',
+      'Task execution class.',
+      parseTaskExecutionClassOption,
+    )
     .option('--source-link <url>', 'Canonical source link for the task.')
     .option('--next-action <text>', 'Next action for the task.')
     .option('--short-note <text>', 'Short note for the task.')
@@ -178,6 +191,7 @@ function createProgram(): Command {
         status: 'ready' | 'doing' | 'waiting' | 'done';
         priority?: 'P1' | 'P2' | 'P3';
         type?: 'interaction' | 'execution';
+        executionClass?: 'light' | 'heavy';
         sourceLink?: string;
         nextAction?: string;
         shortNote?: string;
@@ -192,6 +206,11 @@ function createProgram(): Command {
     .option('--status <status>', 'Task status.', parseTaskStatusOption)
     .option('--priority <priority>', 'Task priority.', parseTaskPriorityOption)
     .option('--type <type>', 'Task type.', parseTaskTypeOption)
+    .option(
+      '--execution-class <executionClass>',
+      'Task execution class.',
+      parseTaskExecutionClassOption,
+    )
     .option('--source-link <url>', 'Canonical source link for the task.')
     .option('--next-action <text>', 'Next action for the task.')
     .option('--short-note <text>', 'Short note for the task.')
@@ -203,6 +222,7 @@ function createProgram(): Command {
           status?: 'ready' | 'doing' | 'waiting' | 'done';
           priority?: 'P1' | 'P2' | 'P3';
           type?: 'interaction' | 'execution';
+          executionClass?: 'light' | 'heavy';
           sourceLink?: string;
           nextAction?: string;
           shortNote?: string;

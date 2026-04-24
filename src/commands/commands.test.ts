@@ -31,6 +31,7 @@ import { runCommand } from './run.js';
 import { statusCommand } from './status.js';
 import { taskCreateCommand } from './task/create.js';
 import {
+  parseTaskExecutionClassOption,
   parseTaskPriorityOption,
   parseTaskStatusFilterOption,
   parseTaskStatusOption,
@@ -58,6 +59,8 @@ function createTaskFixture(taskId: string) {
     priority: taskId === 'item_2' ? ('P3' as const) : ('P1' as const),
     type:
       taskId === 'item_2' ? ('interaction' as const) : ('execution' as const),
+    executionClass:
+      taskId === 'item_2' ? ('heavy' as const) : ('light' as const),
     sourceLink:
       taskId === 'item_2'
         ? 'https://github.com/acme/docs/issues/2'
@@ -198,6 +201,13 @@ function createGitHubClientStub(
             return false;
           }
 
+          if (
+            filters?.executionClass !== undefined &&
+            task.executionClass !== filters.executionClass
+          ) {
+            return false;
+          }
+
           return true;
         })
         .map(
@@ -230,6 +240,7 @@ function createGitHubClientStub(
         status: input.status,
         priority: input.priority ?? null,
         type: input.type ?? null,
+        executionClass: input.executionClass ?? null,
         sourceLink: input.sourceLink ?? null,
         nextAction: input.nextAction ?? null,
         shortNote: input.shortNote ?? null,
@@ -277,6 +288,7 @@ function createEnsuredProjectStub(
       status: 'field_status',
       priority: 'field_priority',
       type: 'field_type',
+      executionClass: 'field_execution_class',
       sourceLink: 'field_source_link',
       nextAction: 'field_next_action',
       shortNote: 'field_short_note',
@@ -286,6 +298,10 @@ function createEnsuredProjectStub(
       doing: 'status_doing',
       waiting: 'status_waiting',
       done: 'status_done',
+    },
+    projectExecutionClassOptionIds: {
+      light: 'execution_class_light',
+      heavy: 'execution_class_heavy',
     },
     ...overrides,
   };
@@ -317,7 +333,7 @@ describe('commands', () => {
     expect(logs).toContain('Config: .gh-agent/config.json created');
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
-      'Project schema: Status is single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
+      'Project schema: Status and Execution Class are single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
     );
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
   });
@@ -719,6 +735,7 @@ describe('commands', () => {
         status: 'ready',
         priority: 'P1',
         type: 'execution',
+        executionClass: 'light',
         sourceLink: 'https://github.com/acme/widgets/pull/1',
       },
       {
@@ -727,12 +744,13 @@ describe('commands', () => {
         status: 'waiting',
         priority: 'P3',
         type: 'interaction',
+        executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/docs/issues/2',
       },
     ]);
   });
 
-  it('taskListCommand honors status, priority, and type filters', async () => {
+  it('taskListCommand honors status, priority, type, and execution class filters', async () => {
     const logs = captureConsoleLogs();
 
     await initCommand({
@@ -743,6 +761,7 @@ describe('commands', () => {
         statuses: ['waiting'],
         priority: 'P3',
         type: 'interaction',
+        executionClass: 'heavy',
       },
       { githubClient: createGitHubClientStub(0, 0) },
     );
@@ -754,6 +773,7 @@ describe('commands', () => {
         status: 'waiting',
         priority: 'P3',
         type: 'interaction',
+        executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/docs/issues/2',
       },
     ]);
@@ -780,6 +800,7 @@ describe('commands', () => {
   "status": "ready",
   "priority": "P1",
   "type": "execution",
+  "executionClass": "light",
   "sourceLink": "https://github.com/acme/widgets/pull/1",
   "nextAction": "Implement the task command set",
   "shortNote": "High-priority execution task"
@@ -798,6 +819,7 @@ describe('commands', () => {
         status: 'doing',
         priority: 'P1',
         type: 'execution',
+        executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/widgets/issues/9',
         nextAction: 'Finish the CLI wiring',
         shortNote: 'Created from command test',
@@ -812,6 +834,7 @@ describe('commands', () => {
   "status": "doing",
   "priority": "P1",
   "type": "execution",
+  "executionClass": "heavy",
   "sourceLink": "https://github.com/acme/widgets/issues/9",
   "nextAction": "Finish the CLI wiring",
   "shortNote": "Created from command test"
@@ -840,6 +863,7 @@ describe('commands', () => {
       status: 'doing',
       priority: 'P1',
       type: 'execution',
+      executionClass: 'light',
       sourceLink: 'https://github.com/acme/widgets/pull/1',
       nextAction: 'Write integration tests',
       shortNote: 'High-priority execution task',
@@ -888,7 +912,7 @@ describe('commands', () => {
     });
 
     expect(logs).toContain(`[
-  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","sourceLink":"https://github.com/acme/widgets/pull/1"}},
+  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","executionClass":"light","sourceLink":"https://github.com/acme/widgets/pull/1"}},
   {"taskId":"item_2","status":"done","ok":false,"error":"status update failed for item_2","errorCategory":"runtime"}
 ]`);
   });
@@ -931,6 +955,7 @@ describe('commands', () => {
             status: 'ready',
             priority: 'P1',
             type: 'execution',
+            executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
           },
         },
@@ -946,6 +971,7 @@ describe('commands', () => {
             status: 'waiting',
             priority: 'P1',
             type: 'execution',
+            executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
           },
         },
@@ -961,6 +987,7 @@ describe('commands', () => {
             status: 'doing',
             priority: 'P1',
             type: 'execution',
+            executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
           },
         },
@@ -977,6 +1004,9 @@ describe('commands', () => {
     );
     expect(() => parseTaskTypeOption('analysis')).toThrow(
       'The type must be either "interaction" or "execution".',
+    );
+    expect(() => parseTaskExecutionClassOption('medium')).toThrow(
+      'The execution class must be either "light" or "heavy".',
     );
     expect(parseTaskStatusFilterOption('ready,doing')).toEqual([
       'ready',

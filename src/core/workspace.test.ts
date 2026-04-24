@@ -38,6 +38,7 @@ describe('workspace normalization', () => {
         status: null,
         priority: null,
         type: null,
+        executionClass: null,
         sourceLink: null,
         nextAction: null,
         shortNote: null,
@@ -47,6 +48,10 @@ describe('workspace normalization', () => {
         doing: null,
         waiting: null,
         done: null,
+      },
+      projectExecutionClassOptionIds: {
+        light: null,
+        heavy: null,
       },
     });
     expect(state).toEqual({
@@ -87,6 +92,7 @@ describe('workspace normalization', () => {
         status: null,
         priority: null,
         type: null,
+        executionClass: null,
         sourceLink: null,
         nextAction: null,
         shortNote: null,
@@ -96,6 +102,10 @@ describe('workspace normalization', () => {
         doing: null,
         waiting: null,
         done: null,
+      },
+      projectExecutionClassOptionIds: {
+        light: null,
+        heavy: null,
       },
     });
   });
@@ -118,6 +128,7 @@ describe('workspace normalization', () => {
         status: null,
         priority: null,
         type: null,
+        executionClass: null,
         sourceLink: null,
         nextAction: null,
         shortNote: null,
@@ -127,6 +138,10 @@ describe('workspace normalization', () => {
         doing: null,
         waiting: null,
         done: null,
+      },
+      projectExecutionClassOptionIds: {
+        light: null,
+        heavy: null,
       },
     });
   });

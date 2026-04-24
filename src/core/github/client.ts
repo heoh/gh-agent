@@ -11,6 +11,7 @@ import type {
   SignalSummary,
   TaskCard,
   TaskCreateInput,
+  TaskExecutionClass,
   TaskListFilters,
   TaskListItem,
   TaskStatus,
@@ -38,6 +39,7 @@ import {
   clearProjectItemFieldValue,
   ensureProject,
   fetchProjectById,
+  getExecutionClassOptionId,
   getRequiredProjectFieldId,
   getStatusOptionId,
   loadConfiguredProject,
@@ -259,6 +261,19 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
       );
     }
 
+    if (input.executionClass !== undefined) {
+      await setProjectItemStatus(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(
+          config.projectFieldIds.executionClass,
+          'Execution Class',
+        ),
+        getExecutionClassOptionId(config, input.executionClass),
+      );
+    }
+
     if (input.sourceLink !== undefined && input.sourceLink !== null) {
       await setProjectItemTextField(
         paths,
@@ -373,6 +388,18 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
       },
     ];
 
+    const singleSelectFieldUpdates: Array<{
+      value: TaskExecutionClass | undefined;
+      fieldId: string | null;
+      fieldName: string;
+    }> = [
+      {
+        value: input.executionClass,
+        fieldId: config.projectFieldIds.executionClass,
+        fieldName: 'Execution Class',
+      },
+    ];
+
     for (const update of textFieldUpdates) {
       if (update.value === undefined) {
         continue;
@@ -394,6 +421,20 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
           update.value,
         );
       }
+    }
+
+    for (const update of singleSelectFieldUpdates) {
+      if (update.value === undefined) {
+        continue;
+      }
+
+      await setProjectItemStatus(
+        paths,
+        projectId,
+        taskId,
+        getRequiredProjectFieldId(update.fieldId, update.fieldName),
+        getExecutionClassOptionId(config, update.value),
+      );
     }
 
     return this.getTaskCard(paths, config, taskId);

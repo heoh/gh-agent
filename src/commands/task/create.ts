@@ -1,4 +1,5 @@
 import type {
+  TaskExecutionClass,
   GitHubSignalClient,
   TaskPriority,
   TaskStatus,
@@ -15,6 +16,7 @@ export interface TaskCreateCommandOptions extends TaskCommandOptions {
   status?: TaskStatus;
   priority?: TaskPriority;
   type?: TaskType;
+  executionClass?: TaskExecutionClass;
   sourceLink?: string;
   nextAction?: string;
   shortNote?: string;

@@ -33,6 +33,7 @@ export type {
   SignalSummary,
   TaskCard,
   TaskCreateInput,
+  TaskExecutionClass,
   TaskListFilters,
   TaskListItem,
   TaskPriority,

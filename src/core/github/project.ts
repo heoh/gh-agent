@@ -2,6 +2,7 @@ import type {
   Config,
   GitHubProjectConfig,
   MailboxPromotionStatus,
+  TaskExecutionClass,
   TaskStatus,
 } from '../types.js';
 import type { WorkspacePaths } from '../workspace.js';
@@ -43,13 +44,16 @@ export function assertConfiguredProject(config: Config): void {
     config.projectFieldIds.status === null ||
     config.projectFieldIds.priority === null ||
     config.projectFieldIds.type === null ||
+    config.projectFieldIds.executionClass === null ||
     config.projectFieldIds.sourceLink === null ||
     config.projectFieldIds.nextAction === null ||
     config.projectFieldIds.shortNote === null ||
     config.projectStatusOptionIds.ready === null ||
     config.projectStatusOptionIds.doing === null ||
     config.projectStatusOptionIds.waiting === null ||
-    config.projectStatusOptionIds.done === null
+    config.projectStatusOptionIds.done === null ||
+    config.projectExecutionClassOptionIds.light === null ||
+    config.projectExecutionClassOptionIds.heavy === null
   ) {
     throw new GitHubConfigError(
       'GitHub Project is not configured for this workspace. Run gh-agent init.',
@@ -187,11 +191,54 @@ function hasRequiredStatusOptions(field: ProjectFieldNode): boolean {
   }
 }
 
+function requireExecutionClassOptionIds(
+  field: ProjectFieldNode,
+): GitHubProjectConfig['projectExecutionClassOptionIds'] {
+  const optionMap = new Map<string, string>();
+
+  for (const option of field.options ?? []) {
+    if (typeof option?.name === 'string' && typeof option.id === 'string') {
+      optionMap.set(option.name, option.id);
+    }
+  }
+
+  const light = optionMap.get('light');
+  const heavy = optionMap.get('heavy');
+
+  if (light === undefined || heavy === undefined) {
+    throw new GitHubConfigError(
+      'GitHub Project Execution Class field must contain light and heavy options. Run gh-agent init after fixing the project schema.',
+    );
+  }
+
+  return {
+    light,
+    heavy,
+  };
+}
+
+function hasRequiredExecutionClassOptions(field: ProjectFieldNode): boolean {
+  try {
+    void requireExecutionClassOptionIds(field);
+    return true;
+  } catch (error) {
+    if (error instanceof GitHubConfigError) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 export function buildProjectConfig(project: ProjectNode): GitHubProjectConfig {
   const fields = createProjectFieldMap(project);
   const statusField = requireSingleSelectField(fields.get('Status'), 'Status');
   const priorityField = requireTextField(fields.get('Priority'), 'Priority');
   const typeField = requireTextField(fields.get('Type'), 'Type');
+  const executionClassField = requireSingleSelectField(
+    fields.get('Execution Class'),
+    'Execution Class',
+  );
   const sourceLinkField = requireTextField(
     fields.get('Source Link'),
     'Source Link',
@@ -213,11 +260,14 @@ export function buildProjectConfig(project: ProjectNode): GitHubProjectConfig {
       status: requireFieldId(statusField, 'Status'),
       priority: requireFieldId(priorityField, 'Priority'),
       type: requireFieldId(typeField, 'Type'),
+      executionClass: requireFieldId(executionClassField, 'Execution Class'),
       sourceLink: requireFieldId(sourceLinkField, 'Source Link'),
       nextAction: requireFieldId(nextActionField, 'Next Action'),
       shortNote: requireFieldId(shortNoteField, 'Short Note'),
     },
     projectStatusOptionIds: requireStatusOptionIds(statusField),
+    projectExecutionClassOptionIds:
+      requireExecutionClassOptionIds(executionClassField),
   };
 }
 
@@ -243,6 +293,26 @@ export function getStatusOptionId(
   if (optionId === null) {
     throw new GitHubConfigError(
       `GitHub Project Status option "${status}" is not configured. Run gh-agent init.`,
+    );
+  }
+
+  return optionId;
+}
+
+export function getExecutionClassOptionId(
+  config: Config,
+  executionClass: TaskExecutionClass,
+): string {
+  assertConfiguredProject(config);
+
+  const optionId =
+    executionClass === 'light'
+      ? config.projectExecutionClassOptionIds.light
+      : config.projectExecutionClassOptionIds.heavy;
+
+  if (optionId === null) {
+    throw new GitHubConfigError(
+      `GitHub Project Execution Class option "${executionClass}" is not configured. Run gh-agent init.`,
     );
   }
 
@@ -802,6 +872,106 @@ async function updateStatusFieldOptions(
   return field;
 }
 
+async function createExecutionClassField(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+): Promise<ProjectFieldNode> {
+  const query = `
+    mutation CreateExecutionClassField($projectId: ID!) {
+      createProjectV2Field(
+        input: {
+          projectId: $projectId
+          name: "Execution Class"
+          dataType: SINGLE_SELECT
+          singleSelectOptions: [
+            { name: "light", color: GREEN, description: "Suitable for lightweight agents" }
+            { name: "heavy", color: ORANGE, description: "Requires a higher-cost agent" }
+          ]
+        }
+      ) {
+        projectV2Field {
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGitHubGraphql<CreateFieldResponse>(query, paths, {
+    projectId,
+  });
+  const field = response.data?.createProjectV2Field?.projectV2Field;
+
+  if (
+    field === null ||
+    field === undefined ||
+    typeof field.id !== 'string' ||
+    typeof field.name !== 'string'
+  ) {
+    throw new GitHubRuntimeError(
+      'Failed to create GitHub Project field Execution Class.',
+    );
+  }
+
+  return field;
+}
+
+async function updateExecutionClassFieldOptions(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  fieldId: string,
+): Promise<ProjectFieldNode> {
+  const query = `
+    mutation UpdateExecutionClassField($fieldId: ID!) {
+      updateProjectV2Field(
+        input: {
+          fieldId: $fieldId
+          singleSelectOptions: [
+            { name: "light", color: GREEN, description: "Suitable for lightweight agents" }
+            { name: "heavy", color: ORANGE, description: "Requires a higher-cost agent" }
+          ]
+        }
+      ) {
+        projectV2Field {
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await runGitHubGraphql<UpdateFieldResponse>(query, paths, {
+    fieldId,
+  });
+  const field = response.data?.updateProjectV2Field?.projectV2Field;
+
+  if (
+    field === null ||
+    field === undefined ||
+    typeof field.id !== 'string' ||
+    typeof field.name !== 'string'
+  ) {
+    throw new GitHubRuntimeError(
+      'Failed to update GitHub Project field Execution Class.',
+    );
+  }
+
+  return field;
+}
+
 async function ensureProjectFields(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   project: ProjectNode,
@@ -822,6 +992,16 @@ async function ensureProjectFields(
   ) {
     throw new GitHubConfigError(
       'GitHub Project field "Status" must be a single-select field. Run gh-agent init after fixing the project schema.',
+    );
+  }
+
+  const existingExecutionClass = fields.get('Execution Class');
+  if (
+    existingExecutionClass !== undefined &&
+    existingExecutionClass.dataType !== 'SINGLE_SELECT'
+  ) {
+    throw new GitHubConfigError(
+      'GitHub Project field "Execution Class" must be a single-select field. Run gh-agent init after fixing the project schema.',
     );
   }
 
@@ -846,6 +1026,15 @@ async function ensureProjectFields(
     await updateStatusFieldOptions(
       paths,
       requireFieldId(existingStatus, 'Status'),
+    );
+  }
+
+  if (existingExecutionClass === undefined) {
+    await createExecutionClassField(paths, projectId);
+  } else if (!hasRequiredExecutionClassOptions(existingExecutionClass)) {
+    await updateExecutionClassFieldOptions(
+      paths,
+      requireFieldId(existingExecutionClass, 'Execution Class'),
     );
   }
 

@@ -1,5 +1,6 @@
 import type {
   TaskCard,
+  TaskExecutionClass,
   TaskListFilters,
   TaskListItem,
   TaskPriority,
@@ -12,6 +13,7 @@ import {
   ProjectFieldValueNode,
   ProjectItemNode,
   ProjectNode,
+  TASK_EXECUTION_CLASS_VALUES,
   TASK_PRIORITY_VALUES,
   TASK_TYPE_VALUES,
 } from './internal.js';
@@ -66,6 +68,18 @@ export function getProjectItemStatusName(item: ProjectItemNode): string | null {
     : null;
 }
 
+export function getProjectItemSingleSelectValue(
+  item: ProjectItemNode,
+  fieldName: string,
+): string | null {
+  const singleSelectValue = getProjectItemFieldValue(item, fieldName);
+
+  return typeof singleSelectValue?.name === 'string' &&
+    singleSelectValue.name.length > 0
+    ? singleSelectValue.name
+    : null;
+}
+
 export function getProjectItemTextValue(
   item: ProjectItemNode,
   fieldName: string,
@@ -104,6 +118,14 @@ function parseTaskTypeValue(value: string | null): TaskType | null {
     : null;
 }
 
+function parseTaskExecutionClassValue(
+  value: string | null,
+): TaskExecutionClass | null {
+  return value !== null && TASK_EXECUTION_CLASS_VALUES.has(value)
+    ? (value as TaskExecutionClass)
+    : null;
+}
+
 function getTaskStatusSortRank(status: TaskStatus): number {
   switch (status) {
     case 'ready':
@@ -139,6 +161,9 @@ function requireTaskCardFromItem(
     status,
     priority: parseTaskPriorityValue(getProjectItemTextValue(item, 'Priority')),
     type: parseTaskTypeValue(getProjectItemTextValue(item, 'Type')),
+    executionClass: parseTaskExecutionClassValue(
+      getProjectItemSingleSelectValue(item, 'Execution Class'),
+    ),
     sourceLink: getProjectItemTextValue(item, 'Source Link'),
     nextAction: getProjectItemTextValue(item, 'Next Action'),
     shortNote: getProjectItemTextValue(item, 'Short Note'),
@@ -152,6 +177,7 @@ export function toTaskListItem(task: TaskCard): TaskListItem {
     status: task.status,
     priority: task.priority,
     type: task.type,
+    executionClass: task.executionClass,
     sourceLink: task.sourceLink,
   };
 }
@@ -183,6 +209,13 @@ export function applyTaskFilters(
     }
 
     if (filters.type !== undefined && task.type !== filters.type) {
+      return false;
+    }
+
+    if (
+      filters.executionClass !== undefined &&
+      task.executionClass !== filters.executionClass
+    ) {
       return false;
     }
 

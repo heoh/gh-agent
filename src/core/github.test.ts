@@ -47,6 +47,7 @@ function createConfig(): Config {
       status: 'field_status',
       priority: 'field_priority',
       type: 'field_type',
+      executionClass: 'field_execution_class',
       sourceLink: 'field_source_link',
       nextAction: 'field_next_action',
       shortNote: 'field_short_note',
@@ -56,6 +57,10 @@ function createConfig(): Config {
       doing: 'status_doing',
       waiting: 'status_waiting',
       done: 'status_done',
+    },
+    projectExecutionClassOptionIds: {
+      light: 'execution_class_light',
+      heavy: 'execution_class_heavy',
     },
   };
 }
@@ -82,6 +87,15 @@ function createProjectNode(items: unknown[]): { data: { node: unknown } } {
             },
             { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
             { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+            {
+              id: 'field_execution_class',
+              name: 'Execution Class',
+              dataType: 'SINGLE_SELECT',
+              options: [
+                { id: 'execution_class_light', name: 'light' },
+                { id: 'execution_class_heavy', name: 'heavy' },
+              ],
+            },
             {
               id: 'field_source_link',
               name: 'Source Link',
@@ -577,6 +591,13 @@ describe('GitHub mailbox mutations', () => {
                 field: { id: 'field_type', name: 'Type' },
               },
               {
+                name: 'heavy',
+                field: {
+                  id: 'field_execution_class',
+                  name: 'Execution Class',
+                },
+              },
+              {
                 text: 'https://github.com/acme/docs/issues/2',
                 field: {
                   id: 'field_source_link',
@@ -604,6 +625,13 @@ describe('GitHub mailbox mutations', () => {
                 field: { id: 'field_type', name: 'Type' },
               },
               {
+                name: 'light',
+                field: {
+                  id: 'field_execution_class',
+                  name: 'Execution Class',
+                },
+              },
+              {
                 text: 'https://github.com/acme/widgets/pull/1',
                 field: {
                   id: 'field_source_link',
@@ -623,6 +651,7 @@ describe('GitHub mailbox mutations', () => {
       {
         statuses: ['ready', 'waiting'],
         type: 'execution',
+        executionClass: 'light',
       },
     );
 
@@ -633,6 +662,7 @@ describe('GitHub mailbox mutations', () => {
         status: 'ready',
         priority: 'P1',
         type: 'execution',
+        executionClass: 'light',
         sourceLink: 'https://github.com/acme/widgets/pull/1',
       },
     ]);
@@ -660,6 +690,13 @@ describe('GitHub mailbox mutations', () => {
               {
                 text: 'execution',
                 field: { id: 'field_type', name: 'Type' },
+              },
+              {
+                name: 'heavy',
+                field: {
+                  id: 'field_execution_class',
+                  name: 'Execution Class',
+                },
               },
               {
                 text: 'https://github.com/acme/widgets/issues/12',
@@ -702,6 +739,7 @@ describe('GitHub mailbox mutations', () => {
       status: 'doing',
       priority: 'P1',
       type: 'execution',
+      executionClass: 'heavy',
       sourceLink: 'https://github.com/acme/widgets/issues/12',
       nextAction: 'Ship the mutations',
       shortNote: 'Actively being implemented',
@@ -714,6 +752,13 @@ describe('GitHub mailbox mutations', () => {
         data: {
           addProjectV2DraftIssue: {
             projectItem: { id: 'item_created' },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
         },
       })
@@ -779,6 +824,13 @@ describe('GitHub mailbox mutations', () => {
                   field: { id: 'field_type', name: 'Type' },
                 },
                 {
+                  name: 'heavy',
+                  field: {
+                    id: 'field_execution_class',
+                    name: 'Execution Class',
+                  },
+                },
+                {
                   text: 'https://github.com/acme/widgets/issues/20',
                   field: {
                     id: 'field_source_link',
@@ -814,6 +866,7 @@ describe('GitHub mailbox mutations', () => {
         status: 'doing',
         priority: 'P1',
         type: 'execution',
+        executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/widgets/issues/20',
         nextAction: 'Write the task commands',
         shortNote: 'Created in test',
@@ -846,6 +899,11 @@ describe('GitHub mailbox mutations', () => {
     );
     expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
       5,
+      expect.stringContaining('singleSelectOptionId'),
+      expect.objectContaining({ optionId: 'execution_class_heavy' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      6,
       expect.stringContaining('value: { text: $value }'),
       expect.objectContaining({
         value: 'https://github.com/acme/widgets/issues/20',
@@ -853,7 +911,7 @@ describe('GitHub mailbox mutations', () => {
     );
   });
 
-  it('updateTaskCard updates text fields and title for draft tasks', async () => {
+  it('updateTaskCard updates text fields, execution class, and title for draft tasks', async () => {
     octokitGraphqlMock
       .mockResolvedValueOnce(
         createProjectNode([
@@ -885,6 +943,13 @@ describe('GitHub mailbox mutations', () => {
           },
         },
       })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_123' },
+          },
+        },
+      })
       .mockResolvedValueOnce(
         createProjectNode([
           {
@@ -906,6 +971,13 @@ describe('GitHub mailbox mutations', () => {
                     name: 'Next Action',
                   },
                 },
+                {
+                  name: 'heavy',
+                  field: {
+                    id: 'field_execution_class',
+                    name: 'Execution Class',
+                  },
+                },
               ],
             },
           },
@@ -920,11 +992,13 @@ describe('GitHub mailbox mutations', () => {
       {
         title: 'New title',
         nextAction: 'Ship the feature',
+        executionClass: 'heavy',
       },
     );
 
     expect(task.title).toBe('New title');
     expect(task.nextAction).toBe('Ship the feature');
+    expect(task.executionClass).toBe('heavy');
     expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining('updateProjectV2DraftIssue'),
@@ -937,6 +1011,11 @@ describe('GitHub mailbox mutations', () => {
       3,
       expect.stringContaining('value: { text: $value }'),
       expect.objectContaining({ value: 'Ship the feature' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining('singleSelectOptionId'),
+      expect.objectContaining({ optionId: 'execution_class_heavy' }),
     );
   });
 

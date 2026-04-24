@@ -9,6 +9,7 @@ export interface TaskListCommandOptions extends TaskCommandOptions {
   statuses?: TaskListFilters['statuses'];
   priority?: TaskListFilters['priority'];
   type?: TaskListFilters['type'];
+  executionClass?: TaskListFilters['executionClass'];
 }
 
 export async function taskListCommand(
@@ -25,6 +26,7 @@ export async function taskListCommand(
         statuses: options.statuses,
         priority: options.priority,
         type: options.type,
+        executionClass: options.executionClass,
       },
     );
 

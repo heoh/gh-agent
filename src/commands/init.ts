@@ -77,6 +77,7 @@ export async function initCommand(
       projectUrl: project.projectUrl,
       projectFieldIds: project.projectFieldIds,
       projectStatusOptionIds: project.projectStatusOptionIds,
+      projectExecutionClassOptionIds: project.projectExecutionClassOptionIds,
     };
 
     await saveConfig(paths, updatedConfig);
@@ -98,7 +99,7 @@ export async function initCommand(
     );
     console.log(`GitHub Project URL: ${project.projectUrl}`);
     console.log(
-      'Project schema: Status is single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
+      'Project schema: Status and Execution Class are single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
     );
     console.log('Next steps: gh-agent status, gh-agent run');
   } catch (error) {

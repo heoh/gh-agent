@@ -8,6 +8,7 @@ import type {
   GitHubSignalClient,
   TaskCard,
   TaskCreateInput,
+  TaskExecutionClass,
   TaskListFilters,
   TaskListItem,
   TaskPriority,
@@ -55,6 +56,16 @@ export function parseTaskPriorityOption(value: string): TaskPriority {
 export function parseTaskTypeOption(value: string): TaskType {
   if (value !== 'interaction' && value !== 'execution') {
     throw new Error('The type must be either "interaction" or "execution".');
+  }
+
+  return value;
+}
+
+export function parseTaskExecutionClassOption(
+  value: string,
+): TaskExecutionClass {
+  if (value !== 'light' && value !== 'heavy') {
+    throw new Error('The execution class must be either "light" or "heavy".');
   }
 
   return value;
@@ -129,6 +140,7 @@ export function toTaskListItem(task: TaskCard): TaskListItem {
     status: task.status,
     priority: task.priority,
     type: task.type,
+    executionClass: task.executionClass,
     sourceLink: task.sourceLink,
   };
 }
@@ -142,6 +154,7 @@ export function buildTaskCreateInput(options: {
   status?: TaskStatus;
   priority?: TaskPriority;
   type?: TaskType;
+  executionClass?: TaskExecutionClass;
   sourceLink?: string;
   nextAction?: string;
   shortNote?: string;
@@ -163,6 +176,7 @@ export function buildTaskCreateInput(options: {
     status: options.status,
     priority: options.priority,
     type: options.type,
+    executionClass: options.executionClass,
     sourceLink: options.sourceLink,
     nextAction: options.nextAction,
     shortNote: options.shortNote,
@@ -174,6 +188,7 @@ export function buildTaskUpdateInput(options: {
   status?: TaskStatus;
   priority?: TaskPriority;
   type?: TaskType;
+  executionClass?: TaskExecutionClass;
   sourceLink?: string;
   nextAction?: string;
   shortNote?: string;
@@ -183,6 +198,7 @@ export function buildTaskUpdateInput(options: {
     status: options.status,
     priority: options.priority,
     type: options.type,
+    executionClass: options.executionClass,
     sourceLink: options.sourceLink,
     nextAction: options.nextAction,
     shortNote: options.shortNote,

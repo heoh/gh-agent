@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import type {
   Config,
+  ProjectExecutionClassOptionIds,
   ProjectFieldIds,
   ProjectStatusOptionIds,
   SessionState,
@@ -34,6 +35,7 @@ function createEmptyProjectFieldIds(): ProjectFieldIds {
     status: null,
     priority: null,
     type: null,
+    executionClass: null,
     sourceLink: null,
     nextAction: null,
     shortNote: null,
@@ -49,6 +51,13 @@ function createEmptyProjectStatusOptionIds(): ProjectStatusOptionIds {
   };
 }
 
+function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptionIds {
+  return {
+    light: null,
+    heavy: null,
+  };
+}
+
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
   pollIntervalMs: 30_000,
@@ -58,6 +67,7 @@ export const DEFAULT_CONFIG: Config = {
   projectUrl: null,
   projectFieldIds: createEmptyProjectFieldIds(),
   projectStatusOptionIds: createEmptyProjectStatusOptionIds(),
+  projectExecutionClassOptionIds: createEmptyProjectExecutionClassOptionIds(),
 };
 
 export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
@@ -126,6 +136,10 @@ function normalizeConfig(raw: unknown): Config {
   const projectStatusOptionIds = record.projectStatusOptionIds as
     | Partial<ProjectStatusOptionIds>
     | undefined;
+  const projectExecutionClassOptionIds =
+    record.projectExecutionClassOptionIds as
+      | Partial<ProjectExecutionClassOptionIds>
+      | undefined;
 
   return {
     agentId:
@@ -160,6 +174,10 @@ function normalizeConfig(raw: unknown): Config {
           : null,
       type:
         typeof projectFieldIds?.type === 'string' ? projectFieldIds.type : null,
+      executionClass:
+        typeof projectFieldIds?.executionClass === 'string'
+          ? projectFieldIds.executionClass
+          : null,
       sourceLink:
         typeof projectFieldIds?.sourceLink === 'string'
           ? projectFieldIds.sourceLink
@@ -189,6 +207,16 @@ function normalizeConfig(raw: unknown): Config {
       done:
         typeof projectStatusOptionIds?.done === 'string'
           ? projectStatusOptionIds.done
+          : null,
+    },
+    projectExecutionClassOptionIds: {
+      light:
+        typeof projectExecutionClassOptionIds?.light === 'string'
+          ? projectExecutionClassOptionIds.light
+          : null,
+      heavy:
+        typeof projectExecutionClassOptionIds?.heavy === 'string'
+          ? projectExecutionClassOptionIds.heavy
           : null,
     },
   };

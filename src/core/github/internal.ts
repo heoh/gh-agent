@@ -5,6 +5,7 @@ export const ACTIONABLE_STATUS_NAMES = new Set(['Ready', 'Doing']);
 export const DEFAULT_PROJECT_TITLE = 'gh-agent';
 export const TASK_PRIORITY_VALUES = new Set(['P1', 'P2', 'P3']);
 export const TASK_TYPE_VALUES = new Set(['interaction', 'execution']);
+export const TASK_EXECUTION_CLASS_VALUES = new Set(['light', 'heavy']);
 
 export interface GhAuthClient {
   login(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<void>;

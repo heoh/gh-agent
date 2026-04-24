@@ -146,6 +146,7 @@ describe('session state transitions', () => {
           status: null,
           priority: null,
           type: null,
+          executionClass: null,
           sourceLink: null,
           nextAction: null,
           shortNote: null,
@@ -155,6 +156,10 @@ describe('session state transitions', () => {
           doing: null,
           waiting: null,
           done: null,
+        },
+        projectExecutionClassOptionIds: {
+          light: null,
+          heavy: null,
         },
       },
       new Date('2026-04-17T17:00:00.000Z'),

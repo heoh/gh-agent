@@ -4,6 +4,7 @@ export interface ProjectFieldIds {
   status: string | null;
   priority: string | null;
   type: string | null;
+  executionClass: string | null;
   sourceLink: string | null;
   nextAction: string | null;
   shortNote: string | null;
@@ -16,6 +17,11 @@ export interface ProjectStatusOptionIds {
   done: string | null;
 }
 
+export interface ProjectExecutionClassOptionIds {
+  light: string | null;
+  heavy: string | null;
+}
+
 export interface Config {
   agentId: string;
   pollIntervalMs: number;
@@ -25,6 +31,7 @@ export interface Config {
   projectUrl: string | null;
   projectFieldIds: ProjectFieldIds;
   projectStatusOptionIds: ProjectStatusOptionIds;
+  projectExecutionClassOptionIds: ProjectExecutionClassOptionIds;
 }
 
 export interface SessionState {
@@ -95,6 +102,7 @@ export interface MailboxProjectCard {
 export type TaskStatus = 'ready' | 'doing' | 'waiting' | 'done';
 export type TaskPriority = 'P1' | 'P2' | 'P3';
 export type TaskType = 'interaction' | 'execution';
+export type TaskExecutionClass = 'light' | 'heavy';
 
 export interface TaskCard {
   id: string;
@@ -103,6 +111,7 @@ export interface TaskCard {
   status: TaskStatus;
   priority: TaskPriority | null;
   type: TaskType | null;
+  executionClass: TaskExecutionClass | null;
   sourceLink: string | null;
   nextAction: string | null;
   shortNote: string | null;
@@ -114,6 +123,7 @@ export interface TaskListItem {
   status: TaskStatus;
   priority: TaskPriority | null;
   type: TaskType | null;
+  executionClass: TaskExecutionClass | null;
   sourceLink: string | null;
 }
 
@@ -121,6 +131,7 @@ export interface TaskListFilters {
   statuses?: TaskStatus[];
   priority?: TaskPriority;
   type?: TaskType;
+  executionClass?: TaskExecutionClass;
 }
 
 export interface TaskCreateInput {
@@ -128,6 +139,7 @@ export interface TaskCreateInput {
   status: TaskStatus;
   priority?: TaskPriority | null;
   type?: TaskType | null;
+  executionClass?: TaskExecutionClass;
   sourceLink?: string | null;
   nextAction?: string | null;
   shortNote?: string | null;
@@ -138,6 +150,7 @@ export interface TaskUpdateInput {
   status?: TaskStatus;
   priority?: TaskPriority | null;
   type?: TaskType | null;
+  executionClass?: TaskExecutionClass;
   sourceLink?: string | null;
   nextAction?: string | null;
   shortNote?: string | null;
@@ -231,6 +244,7 @@ export interface GitHubProjectConfig {
     status: string;
     priority: string;
     type: string;
+    executionClass: string;
     sourceLink: string;
     nextAction: string;
     shortNote: string;
@@ -240,6 +254,10 @@ export interface GitHubProjectConfig {
     doing: string;
     waiting: string;
     done: string;
+  };
+  projectExecutionClassOptionIds: {
+    light: string;
+    heavy: string;
   };
 }
 
