@@ -1,13 +1,29 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Config } from './types.js';
 
 const execFileMock = vi.fn();
 const spawnMock = vi.fn();
+const octokitRequestMock = vi.fn();
+const octokitGraphqlMock = vi.fn();
+const octokitPaginateMock = vi.fn();
+const octokitConstructorMock = vi.fn();
 
 vi.mock('node:child_process', () => ({
   execFile: execFileMock,
   spawn: spawnMock,
+}));
+
+vi.mock('octokit', () => ({
+  Octokit: vi.fn().mockImplementation((options: { auth: string }) => {
+    octokitConstructorMock(options);
+
+    return {
+      request: octokitRequestMock,
+      graphql: octokitGraphqlMock,
+      paginate: octokitPaginateMock,
+    };
+  }),
 }));
 
 const githubModule = await import('./github.js');
@@ -18,25 +34,6 @@ const {
   resolveMailboxThreadDetail,
   sortMailboxNotificationsOldestFirst,
 } = githubModule;
-
-function mockExecFileResponses(
-  responses: Array<{ stdout?: string; stderr?: string; error?: Error }>,
-): void {
-  execFileMock.mockImplementation((_file, _args, _options, callback) => {
-    const response = responses.shift();
-
-    if (response === undefined) {
-      callback(null, '', '');
-      return;
-    }
-
-    callback(
-      response.error ?? null,
-      response.stdout ?? '',
-      response.stderr ?? '',
-    );
-  });
-}
 
 function createConfig(): Config {
   return {
@@ -62,6 +59,77 @@ function createConfig(): Config {
     },
   };
 }
+
+function createProjectNode(items: unknown[]): { data: { node: unknown } } {
+  return {
+    data: {
+      node: {
+        id: 'proj_123',
+        title: 'gh-agent',
+        url: 'https://github.com/users/test/projects/1',
+        fields: {
+          nodes: [
+            {
+              id: 'field_status',
+              name: 'Status',
+              dataType: 'SINGLE_SELECT',
+              options: [
+                { id: 'status_ready', name: 'Ready' },
+                { id: 'status_doing', name: 'Doing' },
+                { id: 'status_waiting', name: 'Waiting' },
+                { id: 'status_done', name: 'Done' },
+              ],
+            },
+            { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+            { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+            {
+              id: 'field_source_link',
+              name: 'Source Link',
+              dataType: 'TEXT',
+            },
+            {
+              id: 'field_next_action',
+              name: 'Next Action',
+              dataType: 'TEXT',
+            },
+            {
+              id: 'field_short_note',
+              name: 'Short Note',
+              dataType: 'TEXT',
+            },
+          ],
+        },
+        items: {
+          nodes: items,
+        },
+      },
+    },
+  };
+}
+
+beforeEach(() => {
+  execFileMock.mockReset();
+  spawnMock.mockReset();
+  octokitRequestMock.mockReset();
+  octokitGraphqlMock.mockReset();
+  octokitPaginateMock.mockReset();
+  octokitConstructorMock.mockReset();
+
+  execFileMock.mockImplementation((_file, args, _options, callback) => {
+    if (
+      Array.isArray(args) &&
+      args[0] === 'auth' &&
+      args[1] === 'token' &&
+      args[2] === '--hostname' &&
+      args[3] === 'github.com'
+    ) {
+      callback(null, 'test-token\n', '');
+      return;
+    }
+
+    callback(null, '', '');
+  });
+});
 
 describe('parseMailboxNotificationsPayload', () => {
   it('parses standard notification payloads', () => {
@@ -199,15 +267,10 @@ describe('parseMailboxNotificationsPayload', () => {
 });
 
 describe('GitHub mailbox mutations', () => {
-  beforeEach(() => {
-    execFileMock.mockReset();
-    spawnMock.mockReset();
-  });
-
   it('resolveMailboxThreadDetail loads the canonical thread URL and content node id', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
+    octokitRequestMock
+      .mockResolvedValueOnce({
+        data: {
           id: 'thread_1',
           unread: true,
           reason: 'review_requested',
@@ -218,15 +281,14 @@ describe('GitHub mailbox mutations', () => {
             type: 'PullRequest',
             url: 'https://api.github.com/repos/acme/widgets/pulls/1',
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
           html_url: 'https://github.com/acme/widgets/pull/1',
           node_id: 'node_pull_1',
-        }),
-      },
-    ]);
+        },
+      });
 
     const detail = await resolveMailboxThreadDetail(
       { ghConfigDir: '/tmp/gh-config' },
@@ -246,52 +308,40 @@ describe('GitHub mailbox mutations', () => {
       },
       contentNodeId: 'node_pull_1',
     });
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(octokitConstructorMock).toHaveBeenCalledWith({ auth: 'test-token' });
+    expect(octokitRequestMock).toHaveBeenNthCalledWith(
       1,
-      'gh',
-      ['api', 'notifications/threads/thread_1'],
-      expect.any(Object),
-      expect.any(Function),
+      'GET /notifications/threads/thread_1',
     );
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(octokitRequestMock).toHaveBeenNthCalledWith(
       2,
-      'gh',
-      ['api', '/repos/acme/widgets/pulls/1'],
-      expect.any(Object),
-      expect.any(Function),
+      'GET /repos/acme/widgets/pulls/1',
     );
   });
 
   it('promoteMailboxThread adds a project item from content and sets status and source link', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            addProjectV2ItemById: {
-              item: { id: 'item_123' },
-            },
+    octokitGraphqlMock
+      .mockResolvedValueOnce({
+        data: {
+          addProjectV2ItemById: {
+            item: { id: 'item_123' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_123' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_123' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_123' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_123' },
           },
-        }),
-      },
-    ]);
+        },
+      });
 
     const client = createGitHubSignalClient();
     const card = await client.promoteMailboxThread(
@@ -315,49 +365,51 @@ describe('GitHub mailbox mutations', () => {
       status: 'ready',
     });
 
-    const graphqlCalls = execFileMock.mock.calls.map((call) => call[1]);
-    expect(graphqlCalls[0]).toContain('graphql');
-    expect(graphqlCalls[0].join(' ')).toContain('addProjectV2ItemById');
-    expect(graphqlCalls[0]).toContain('-F');
-    expect(graphqlCalls[0].join(' ')).toContain('contentId=node_pull_1');
-    expect(graphqlCalls[1].join(' ')).toContain('singleSelectOptionId');
-    expect(graphqlCalls[1].join(' ')).toContain('optionId=status_ready');
-    expect(graphqlCalls[2].join(' ')).toContain('value: { text: $value }');
-    expect(graphqlCalls[2].join(' ')).toContain(
-      'value=https://github.com/acme/widgets/pull/1',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('addProjectV2ItemById'),
+      {
+        projectId: 'proj_123',
+        contentId: 'node_pull_1',
+      },
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('singleSelectOptionId'),
+      expect.objectContaining({ optionId: 'status_ready' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('value: { text: $value }'),
+      expect.objectContaining({
+        value: 'https://github.com/acme/widgets/pull/1',
+      }),
     );
   });
 
   it('promoteMailboxThread falls back to a draft project item when no content node id exists', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            addProjectV2DraftIssue: {
-              projectItem: { id: 'item_draft_1' },
-            },
+    octokitGraphqlMock
+      .mockResolvedValueOnce({
+        data: {
+          addProjectV2DraftIssue: {
+            projectItem: { id: 'item_draft_1' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_draft_1' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_draft_1' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_draft_1' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_draft_1' },
           },
-        }),
-      },
-    ]);
+        },
+      });
 
     const client = createGitHubSignalClient();
     const card = await client.promoteMailboxThread(
@@ -374,13 +426,18 @@ describe('GitHub mailbox mutations', () => {
     );
 
     expect(card.id).toBe('item_draft_1');
-    expect(execFileMock.mock.calls[0]?.[1].join(' ')).toContain(
-      'addProjectV2DraftIssue',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('addProjectV2DraftIssue'),
+      {
+        projectId: 'proj_123',
+        title: 'Triage docs cleanup',
+      },
     );
   });
 
   it('markMailboxThreadAsRead sends the notifications PATCH request', async () => {
-    mockExecFileResponses([{ stdout: '' }]);
+    octokitRequestMock.mockResolvedValueOnce({ data: {} });
 
     const client = createGitHubSignalClient();
     await client.markMailboxThreadAsRead(
@@ -388,18 +445,15 @@ describe('GitHub mailbox mutations', () => {
       'thread_1',
     );
 
-    expect(execFileMock).toHaveBeenCalledWith(
-      'gh',
-      ['api', '--method', 'PATCH', 'notifications/threads/thread_1'],
-      expect.any(Object),
-      expect.any(Function),
+    expect(octokitRequestMock).toHaveBeenCalledWith(
+      'PATCH /notifications/threads/thread_1',
     );
   });
 
   it('getMailboxThreadDetail exposes unread state and canonical URL for show', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
+    octokitRequestMock
+      .mockResolvedValueOnce({
+        data: {
           id: 'thread_2',
           unread: false,
           reason: 'mention',
@@ -410,15 +464,14 @@ describe('GitHub mailbox mutations', () => {
             type: 'Issue',
             url: 'https://api.github.com/repos/acme/docs/issues/2',
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
           html_url: 'https://github.com/acme/docs/issues/2',
           node_id: 'node_issue_2',
-        }),
-      },
-    ]);
+        },
+      });
 
     const client = createGitHubSignalClient();
     const detail = await client.getMailboxThreadDetail(
@@ -442,93 +495,48 @@ describe('GitHub mailbox mutations', () => {
   });
 
   it('listRelatedMailboxCards returns exact Source Link matches only', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
+    octokitGraphqlMock.mockResolvedValueOnce(
+      createProjectNode([
+        {
+          id: 'item_match',
+          content: { title: 'Matching card' },
+          fieldValues: {
+            nodes: [
+              {
+                name: 'Ready',
+                field: { id: 'field_status', name: 'Status' },
               },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_match',
-                    content: { title: 'Matching card' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Ready',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'https://github.com/acme/widgets/pull/1',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                  {
-                    id: 'item_other',
-                    content: { title: 'Other card' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Waiting',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'https://github.com/acme/widgets/pull/99',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
+              {
+                text: 'https://github.com/acme/widgets/pull/1',
+                field: {
+                  id: 'field_source_link',
+                  name: 'Source Link',
+                },
               },
-            },
+            ],
           },
-        }),
-      },
-    ]);
+        },
+        {
+          id: 'item_other',
+          content: { title: 'Other card' },
+          fieldValues: {
+            nodes: [
+              {
+                name: 'Waiting',
+                field: { id: 'field_status', name: 'Status' },
+              },
+              {
+                text: 'https://github.com/acme/widgets/pull/99',
+                field: {
+                  id: 'field_source_link',
+                  name: 'Source Link',
+                },
+              },
+            ],
+          },
+        },
+      ]),
+    );
 
     const client = createGitHubSignalClient();
     const cards = await client.listRelatedMailboxCards(
@@ -549,109 +557,64 @@ describe('GitHub mailbox mutations', () => {
   });
 
   it('listTaskCards parses project items into compact task rows with filtering', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
+    octokitGraphqlMock.mockResolvedValueOnce(
+      createProjectNode([
+        {
+          id: 'item_waiting',
+          content: { __typename: 'DraftIssue', title: 'Later task' },
+          fieldValues: {
+            nodes: [
+              {
+                name: 'Waiting',
+                field: { id: 'field_status', name: 'Status' },
               },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_waiting',
-                    content: { __typename: 'DraftIssue', title: 'Later task' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Waiting',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'P3',
-                          field: { id: 'field_priority', name: 'Priority' },
-                        },
-                        {
-                          text: 'interaction',
-                          field: { id: 'field_type', name: 'Type' },
-                        },
-                        {
-                          text: 'https://github.com/acme/docs/issues/2',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                  {
-                    id: 'item_ready',
-                    content: { __typename: 'DraftIssue', title: 'Active task' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Ready',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'P1',
-                          field: { id: 'field_priority', name: 'Priority' },
-                        },
-                        {
-                          text: 'execution',
-                          field: { id: 'field_type', name: 'Type' },
-                        },
-                        {
-                          text: 'https://github.com/acme/widgets/pull/1',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
+              {
+                text: 'P3',
+                field: { id: 'field_priority', name: 'Priority' },
               },
-            },
+              {
+                text: 'interaction',
+                field: { id: 'field_type', name: 'Type' },
+              },
+              {
+                text: 'https://github.com/acme/docs/issues/2',
+                field: {
+                  id: 'field_source_link',
+                  name: 'Source Link',
+                },
+              },
+            ],
           },
-        }),
-      },
-    ]);
+        },
+        {
+          id: 'item_ready',
+          content: { __typename: 'DraftIssue', title: 'Active task' },
+          fieldValues: {
+            nodes: [
+              {
+                name: 'Ready',
+                field: { id: 'field_status', name: 'Status' },
+              },
+              {
+                text: 'P1',
+                field: { id: 'field_priority', name: 'Priority' },
+              },
+              {
+                text: 'execution',
+                field: { id: 'field_type', name: 'Type' },
+              },
+              {
+                text: 'https://github.com/acme/widgets/pull/1',
+                field: {
+                  id: 'field_source_link',
+                  name: 'Source Link',
+                },
+              },
+            ],
+          },
+        },
+      ]),
+    );
 
     const client = createGitHubSignalClient();
     const tasks = await client.listTaskCards(
@@ -676,99 +639,54 @@ describe('GitHub mailbox mutations', () => {
   });
 
   it('getTaskCard returns the full task card object', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_123',
-                    content: {
-                      __typename: 'DraftIssue',
-                      title: 'Implement task update',
-                    },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Doing',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'P1',
-                          field: { id: 'field_priority', name: 'Priority' },
-                        },
-                        {
-                          text: 'execution',
-                          field: { id: 'field_type', name: 'Type' },
-                        },
-                        {
-                          text: 'https://github.com/acme/widgets/issues/12',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                        {
-                          text: 'Ship the mutations',
-                          field: {
-                            id: 'field_next_action',
-                            name: 'Next Action',
-                          },
-                        },
-                        {
-                          text: 'Actively being implemented',
-                          field: {
-                            id: 'field_short_note',
-                            name: 'Short Note',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
+    octokitGraphqlMock.mockResolvedValueOnce(
+      createProjectNode([
+        {
+          id: 'item_123',
+          content: {
+            __typename: 'DraftIssue',
+            title: 'Implement task update',
           },
-        }),
-      },
-    ]);
+          fieldValues: {
+            nodes: [
+              {
+                name: 'Doing',
+                field: { id: 'field_status', name: 'Status' },
+              },
+              {
+                text: 'P1',
+                field: { id: 'field_priority', name: 'Priority' },
+              },
+              {
+                text: 'execution',
+                field: { id: 'field_type', name: 'Type' },
+              },
+              {
+                text: 'https://github.com/acme/widgets/issues/12',
+                field: {
+                  id: 'field_source_link',
+                  name: 'Source Link',
+                },
+              },
+              {
+                text: 'Ship the mutations',
+                field: {
+                  id: 'field_next_action',
+                  name: 'Next Action',
+                },
+              },
+              {
+                text: 'Actively being implemented',
+                field: {
+                  id: 'field_short_note',
+                  name: 'Short Note',
+                },
+              },
+            ],
+          },
+        },
+      ]),
+    );
 
     const client = createGitHubSignalClient();
     const task = await client.getTaskCard(
@@ -791,159 +709,101 @@ describe('GitHub mailbox mutations', () => {
   });
 
   it('createTaskCard creates a draft item and applies all supported fields', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            addProjectV2DraftIssue: {
-              projectItem: { id: 'item_created' },
-            },
+    octokitGraphqlMock
+      .mockResolvedValueOnce({
+        data: {
+          addProjectV2DraftIssue: {
+            projectItem: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_created' },
-            },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_created' },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
+        },
+      })
+      .mockResolvedValueOnce(
+        createProjectNode([
+          {
+            id: 'item_created',
+            content: { __typename: 'DraftIssue', title: 'New task' },
+            fieldValues: {
+              nodes: [
+                {
+                  name: 'Doing',
+                  field: { id: 'field_status', name: 'Status' },
+                },
+                {
+                  text: 'P1',
+                  field: { id: 'field_priority', name: 'Priority' },
+                },
+                {
+                  text: 'execution',
+                  field: { id: 'field_type', name: 'Type' },
+                },
+                {
+                  text: 'https://github.com/acme/widgets/issues/20',
+                  field: {
                     id: 'field_source_link',
                     name: 'Source Link',
-                    dataType: 'TEXT',
                   },
-                  {
+                },
+                {
+                  text: 'Write the task commands',
+                  field: {
                     id: 'field_next_action',
                     name: 'Next Action',
-                    dataType: 'TEXT',
                   },
-                  {
+                },
+                {
+                  text: 'Created in test',
+                  field: {
                     id: 'field_short_note',
                     name: 'Short Note',
-                    dataType: 'TEXT',
                   },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_created',
-                    content: { __typename: 'DraftIssue', title: 'New task' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Doing',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'P1',
-                          field: { id: 'field_priority', name: 'Priority' },
-                        },
-                        {
-                          text: 'execution',
-                          field: { id: 'field_type', name: 'Type' },
-                        },
-                        {
-                          text: 'https://github.com/acme/widgets/issues/20',
-                          field: {
-                            id: 'field_source_link',
-                            name: 'Source Link',
-                          },
-                        },
-                        {
-                          text: 'Write the task commands',
-                          field: {
-                            id: 'field_next_action',
-                            name: 'Next Action',
-                          },
-                        },
-                        {
-                          text: 'Created in test',
-                          field: {
-                            id: 'field_short_note',
-                            name: 'Short Note',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
+                },
+              ],
             },
           },
-        }),
-      },
-    ]);
+        ]),
+      );
 
     const client = createGitHubSignalClient();
     const task = await client.createTaskCard(
@@ -961,165 +821,96 @@ describe('GitHub mailbox mutations', () => {
     );
 
     expect(task.id).toBe('item_created');
-    const graphqlCalls = execFileMock.mock.calls.map((call) => call[1]);
-    expect(graphqlCalls[0].join(' ')).toContain('addProjectV2DraftIssue');
-    expect(graphqlCalls[1].join(' ')).toContain('optionId=status_doing');
-    expect(graphqlCalls[2].join(' ')).toContain('value=P1');
-    expect(graphqlCalls[3].join(' ')).toContain('value=execution');
-    expect(graphqlCalls[4].join(' ')).toContain(
-      'value=https://github.com/acme/widgets/issues/20',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('addProjectV2DraftIssue'),
+      {
+        projectId: 'proj_123',
+        title: 'New task',
+      },
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('singleSelectOptionId'),
+      expect.objectContaining({ optionId: 'status_doing' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('value: { text: $value }'),
+      expect.objectContaining({ value: 'P1' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining('value: { text: $value }'),
+      expect.objectContaining({ value: 'execution' }),
+    );
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining('value: { text: $value }'),
+      expect.objectContaining({
+        value: 'https://github.com/acme/widgets/issues/20',
+      }),
     );
   });
 
   it('updateTaskCard updates text fields and title for draft tasks', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
+    octokitGraphqlMock
+      .mockResolvedValueOnce(
+        createProjectNode([
+          {
+            id: 'item_123',
+            content: { __typename: 'DraftIssue', title: 'Old title' },
+            fieldValues: {
+              nodes: [
+                {
+                  name: 'Ready',
+                  field: { id: 'field_status', name: 'Status' },
+                },
+              ],
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2DraftIssue: {
+            draftIssue: { id: 'item_123' },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_123' },
+          },
+        },
+      })
+      .mockResolvedValueOnce(
+        createProjectNode([
+          {
+            id: 'item_123',
+            content: {
+              __typename: 'DraftIssue',
+              title: 'New title',
+            },
+            fieldValues: {
+              nodes: [
+                {
+                  name: 'Ready',
+                  field: { id: 'field_status', name: 'Status' },
+                },
+                {
+                  text: 'Ship the feature',
+                  field: {
                     id: 'field_next_action',
                     name: 'Next Action',
-                    dataType: 'TEXT',
                   },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_123',
-                    content: { __typename: 'DraftIssue', title: 'Old title' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Ready',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
+                },
+              ],
             },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2DraftIssue: {
-              draftIssue: { id: 'item_123' },
-            },
-          },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_123' },
-            },
-          },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_123',
-                    content: {
-                      __typename: 'DraftIssue',
-                      title: 'New title',
-                    },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Ready',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                        {
-                          text: 'Ship the feature',
-                          field: {
-                            id: 'field_next_action',
-                            name: 'Next Action',
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        }),
-      },
-    ]);
+        ]),
+      );
 
     const client = createGitHubSignalClient();
     const task = await client.updateTaskCard(
@@ -1134,144 +925,62 @@ describe('GitHub mailbox mutations', () => {
 
     expect(task.title).toBe('New title');
     expect(task.nextAction).toBe('Ship the feature');
-    expect(execFileMock.mock.calls[1]?.[1].join(' ')).toContain(
-      'updateProjectV2DraftIssue',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('updateProjectV2DraftIssue'),
+      {
+        itemId: 'item_123',
+        title: 'New title',
+      },
     );
-    expect(execFileMock.mock.calls[2]?.[1].join(' ')).toContain(
-      'value=Ship the feature',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('value: { text: $value }'),
+      expect.objectContaining({ value: 'Ship the feature' }),
     );
   });
 
   it('setTaskCardStatus updates a single card status and returns the full card', async () => {
-    mockExecFileResponses([
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_123',
-                    content: { __typename: 'DraftIssue', title: 'Task' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Ready',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
+    octokitGraphqlMock
+      .mockResolvedValueOnce(
+        createProjectNode([
+          {
+            id: 'item_123',
+            content: { __typename: 'DraftIssue', title: 'Task' },
+            fieldValues: {
+              nodes: [
+                {
+                  name: 'Ready',
+                  field: { id: 'field_status', name: 'Status' },
+                },
+              ],
             },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            updateProjectV2ItemFieldValue: {
-              projectV2Item: { id: 'item_123' },
+        ]),
+      )
+      .mockResolvedValueOnce({
+        data: {
+          updateProjectV2ItemFieldValue: {
+            projectV2Item: { id: 'item_123' },
+          },
+        },
+      })
+      .mockResolvedValueOnce(
+        createProjectNode([
+          {
+            id: 'item_123',
+            content: { __typename: 'DraftIssue', title: 'Task' },
+            fieldValues: {
+              nodes: [
+                {
+                  name: 'Done',
+                  field: { id: 'field_status', name: 'Status' },
+                },
+              ],
             },
           },
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          data: {
-            node: {
-              id: 'proj_123',
-              title: 'gh-agent',
-              url: 'https://github.com/users/test/projects/1',
-              fields: {
-                nodes: [
-                  {
-                    id: 'field_status',
-                    name: 'Status',
-                    dataType: 'SINGLE_SELECT',
-                    options: [
-                      { id: 'status_ready', name: 'Ready' },
-                      { id: 'status_doing', name: 'Doing' },
-                      { id: 'status_waiting', name: 'Waiting' },
-                      { id: 'status_done', name: 'Done' },
-                    ],
-                  },
-                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
-                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
-                  {
-                    id: 'field_source_link',
-                    name: 'Source Link',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_next_action',
-                    name: 'Next Action',
-                    dataType: 'TEXT',
-                  },
-                  {
-                    id: 'field_short_note',
-                    name: 'Short Note',
-                    dataType: 'TEXT',
-                  },
-                ],
-              },
-              items: {
-                nodes: [
-                  {
-                    id: 'item_123',
-                    content: { __typename: 'DraftIssue', title: 'Task' },
-                    fieldValues: {
-                      nodes: [
-                        {
-                          name: 'Done',
-                          field: { id: 'field_status', name: 'Status' },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        }),
-      },
-    ]);
+        ]),
+      );
 
     const client = createGitHubSignalClient();
     const task = await client.setTaskCardStatus(
@@ -1282,8 +991,10 @@ describe('GitHub mailbox mutations', () => {
     );
 
     expect(task.status).toBe('done');
-    expect(execFileMock.mock.calls[1]?.[1].join(' ')).toContain(
-      'optionId=status_done',
+    expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('singleSelectOptionId'),
+      expect.objectContaining({ optionId: 'status_done' }),
     );
   });
 });

@@ -34,7 +34,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "commander": "^13.1.0"
+    "commander": "^13.1.0",
+    "octokit": "^5.0.5"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
