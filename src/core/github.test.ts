@@ -547,4 +547,743 @@ describe('GitHub mailbox mutations', () => {
       },
     ]);
   });
+
+  it('listTaskCards parses project items into compact task rows with filtering', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_waiting',
+                    content: { __typename: 'DraftIssue', title: 'Later task' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Waiting',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'P3',
+                          field: { id: 'field_priority', name: 'Priority' },
+                        },
+                        {
+                          text: 'interaction',
+                          field: { id: 'field_type', name: 'Type' },
+                        },
+                        {
+                          text: 'https://github.com/acme/docs/issues/2',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    id: 'item_ready',
+                    content: { __typename: 'DraftIssue', title: 'Active task' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Ready',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'P1',
+                          field: { id: 'field_priority', name: 'Priority' },
+                        },
+                        {
+                          text: 'execution',
+                          field: { id: 'field_type', name: 'Type' },
+                        },
+                        {
+                          text: 'https://github.com/acme/widgets/pull/1',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const tasks = await client.listTaskCards(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      {
+        statuses: ['ready', 'waiting'],
+        type: 'execution',
+      },
+    );
+
+    expect(tasks).toEqual([
+      {
+        id: 'item_ready',
+        title: 'Active task',
+        status: 'ready',
+        priority: 'P1',
+        type: 'execution',
+        sourceLink: 'https://github.com/acme/widgets/pull/1',
+      },
+    ]);
+  });
+
+  it('getTaskCard returns the full task card object', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_123',
+                    content: {
+                      __typename: 'DraftIssue',
+                      title: 'Implement task update',
+                    },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Doing',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'P1',
+                          field: { id: 'field_priority', name: 'Priority' },
+                        },
+                        {
+                          text: 'execution',
+                          field: { id: 'field_type', name: 'Type' },
+                        },
+                        {
+                          text: 'https://github.com/acme/widgets/issues/12',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                        {
+                          text: 'Ship the mutations',
+                          field: {
+                            id: 'field_next_action',
+                            name: 'Next Action',
+                          },
+                        },
+                        {
+                          text: 'Actively being implemented',
+                          field: {
+                            id: 'field_short_note',
+                            name: 'Short Note',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const task = await client.getTaskCard(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      'item_123',
+    );
+
+    expect(task).toEqual({
+      id: 'item_123',
+      projectId: 'proj_123',
+      title: 'Implement task update',
+      status: 'doing',
+      priority: 'P1',
+      type: 'execution',
+      sourceLink: 'https://github.com/acme/widgets/issues/12',
+      nextAction: 'Ship the mutations',
+      shortNote: 'Actively being implemented',
+    });
+  });
+
+  it('createTaskCard creates a draft item and applies all supported fields', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            addProjectV2DraftIssue: {
+              projectItem: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_created' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_created',
+                    content: { __typename: 'DraftIssue', title: 'New task' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Doing',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'P1',
+                          field: { id: 'field_priority', name: 'Priority' },
+                        },
+                        {
+                          text: 'execution',
+                          field: { id: 'field_type', name: 'Type' },
+                        },
+                        {
+                          text: 'https://github.com/acme/widgets/issues/20',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                        {
+                          text: 'Write the task commands',
+                          field: {
+                            id: 'field_next_action',
+                            name: 'Next Action',
+                          },
+                        },
+                        {
+                          text: 'Created in test',
+                          field: {
+                            id: 'field_short_note',
+                            name: 'Short Note',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const task = await client.createTaskCard(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      {
+        title: 'New task',
+        status: 'doing',
+        priority: 'P1',
+        type: 'execution',
+        sourceLink: 'https://github.com/acme/widgets/issues/20',
+        nextAction: 'Write the task commands',
+        shortNote: 'Created in test',
+      },
+    );
+
+    expect(task.id).toBe('item_created');
+    const graphqlCalls = execFileMock.mock.calls.map((call) => call[1]);
+    expect(graphqlCalls[0].join(' ')).toContain('addProjectV2DraftIssue');
+    expect(graphqlCalls[1].join(' ')).toContain('optionId=status_doing');
+    expect(graphqlCalls[2].join(' ')).toContain('value=P1');
+    expect(graphqlCalls[3].join(' ')).toContain('value=execution');
+    expect(graphqlCalls[4].join(' ')).toContain(
+      'value=https://github.com/acme/widgets/issues/20',
+    );
+  });
+
+  it('updateTaskCard updates text fields and title for draft tasks', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_123',
+                    content: { __typename: 'DraftIssue', title: 'Old title' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Ready',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2DraftIssue: {
+              draftIssue: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_123',
+                    content: {
+                      __typename: 'DraftIssue',
+                      title: 'New title',
+                    },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Ready',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'Ship the feature',
+                          field: {
+                            id: 'field_next_action',
+                            name: 'Next Action',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const task = await client.updateTaskCard(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      'item_123',
+      {
+        title: 'New title',
+        nextAction: 'Ship the feature',
+      },
+    );
+
+    expect(task.title).toBe('New title');
+    expect(task.nextAction).toBe('Ship the feature');
+    expect(execFileMock.mock.calls[1]?.[1].join(' ')).toContain(
+      'updateProjectV2DraftIssue',
+    );
+    expect(execFileMock.mock.calls[2]?.[1].join(' ')).toContain(
+      'value=Ship the feature',
+    );
+  });
+
+  it('setTaskCardStatus updates a single card status and returns the full card', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_123',
+                    content: { __typename: 'DraftIssue', title: 'Task' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Ready',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_123',
+                    content: { __typename: 'DraftIssue', title: 'Task' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Done',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const task = await client.setTaskCardStatus(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      'item_123',
+      'done',
+    );
+
+    expect(task.status).toBe('done');
+    expect(execFileMock.mock.calls[1]?.[1].join(' ')).toContain(
+      'optionId=status_done',
+    );
+  });
 });

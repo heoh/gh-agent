@@ -14,6 +14,22 @@ import {
 import { mailboxShowCommand } from './commands/mailbox/show.js';
 import { runCommand } from './commands/run.js';
 import { statusCommand } from './commands/status.js';
+import { taskCreateCommand } from './commands/task/create.js';
+import {
+  parseTaskPriorityOption,
+  parseTaskStatusFilterOption,
+  parseTaskStatusOption,
+  parseTaskTypeOption,
+} from './commands/task/common.js';
+import { taskListCommand } from './commands/task/list.js';
+import { taskShowCommand } from './commands/task/show.js';
+import {
+  taskDoingCommand,
+  taskDoneCommand,
+  taskReadyCommand,
+  taskWaitCommand,
+} from './commands/task/status.js';
+import { taskUpdateCommand } from './commands/task/update.js';
 
 function createProgram(): Command {
   const program = new Command();
@@ -107,6 +123,116 @@ function createProgram(): Command {
     )
     .argument('<threadId>', 'A GitHub notification thread id.')
     .action(async (threadId: string) => mailboxShowCommand(threadId));
+
+  const task = program
+    .command('task')
+    .description('Inspect and manage GitHub Project task cards.');
+
+  task
+    .command('list')
+    .description('List task cards from the configured GitHub Project.')
+    .option(
+      '--status <status>',
+      'Filter by one or more statuses. Repeat or use comma-separated values.',
+      parseTaskStatusFilterOption,
+      [],
+    )
+    .option(
+      '--priority <priority>',
+      'Filter by priority.',
+      parseTaskPriorityOption,
+    )
+    .option('--type <type>', 'Filter by task type.', parseTaskTypeOption)
+    .action(
+      async (options: {
+        status: Array<'ready' | 'doing' | 'waiting' | 'done'>;
+        priority?: 'P1' | 'P2' | 'P3';
+        type?: 'interaction' | 'execution';
+      }) =>
+        taskListCommand({
+          statuses: options.status,
+          priority: options.priority,
+          type: options.type,
+        }),
+    );
+
+  task
+    .command('show')
+    .description('Show a full task card by GitHub Project item id.')
+    .argument('<taskId>', 'A GitHub Project item id.')
+    .action(async (taskId: string) => taskShowCommand(taskId));
+
+  task
+    .command('create')
+    .description('Create a draft task card in the configured GitHub Project.')
+    .requiredOption('--title <title>', 'Task title.')
+    .requiredOption('--status <status>', 'Task status.', parseTaskStatusOption)
+    .option('--priority <priority>', 'Task priority.', parseTaskPriorityOption)
+    .option('--type <type>', 'Task type.', parseTaskTypeOption)
+    .option('--source-link <url>', 'Canonical source link for the task.')
+    .option('--next-action <text>', 'Next action for the task.')
+    .option('--short-note <text>', 'Short note for the task.')
+    .action(
+      async (options: {
+        title: string;
+        status: 'ready' | 'doing' | 'waiting' | 'done';
+        priority?: 'P1' | 'P2' | 'P3';
+        type?: 'interaction' | 'execution';
+        sourceLink?: string;
+        nextAction?: string;
+        shortNote?: string;
+      }) => taskCreateCommand(options),
+    );
+
+  task
+    .command('update')
+    .description('Update fields on a task card by GitHub Project item id.')
+    .argument('<taskId>', 'A GitHub Project item id.')
+    .option('--title <title>', 'Task title.')
+    .option('--status <status>', 'Task status.', parseTaskStatusOption)
+    .option('--priority <priority>', 'Task priority.', parseTaskPriorityOption)
+    .option('--type <type>', 'Task type.', parseTaskTypeOption)
+    .option('--source-link <url>', 'Canonical source link for the task.')
+    .option('--next-action <text>', 'Next action for the task.')
+    .option('--short-note <text>', 'Short note for the task.')
+    .action(
+      async (
+        taskId: string,
+        options: {
+          title?: string;
+          status?: 'ready' | 'doing' | 'waiting' | 'done';
+          priority?: 'P1' | 'P2' | 'P3';
+          type?: 'interaction' | 'execution';
+          sourceLink?: string;
+          nextAction?: string;
+          shortNote?: string;
+        },
+      ) => taskUpdateCommand(taskId, options),
+    );
+
+  task
+    .command('ready')
+    .description('Force-set task cards to Ready.')
+    .argument('<taskId...>', 'One or more GitHub Project item ids.')
+    .action(async (taskIds: string[]) => taskReadyCommand(taskIds));
+
+  task
+    .command('wait')
+    .description('Force-set task cards to Waiting.')
+    .argument('<taskId...>', 'One or more GitHub Project item ids.')
+    .action(async (taskIds: string[]) => taskWaitCommand(taskIds));
+
+  task
+    .command('doing')
+    .description('Force-set task cards to Doing.')
+    .argument('<taskId...>', 'One or more GitHub Project item ids.')
+    .action(async (taskIds: string[]) => taskDoingCommand(taskIds));
+
+  task
+    .command('done')
+    .description('Force-set task cards to Done.')
+    .argument('<taskId...>', 'One or more GitHub Project item ids.')
+    .action(async (taskIds: string[]) => taskDoneCommand(taskIds));
 
   return program;
 }

@@ -9,6 +9,16 @@ export {
 export { mailboxShowCommand } from './commands/mailbox/show.js';
 export { runCommand } from './commands/run.js';
 export { statusCommand } from './commands/status.js';
+export { taskCreateCommand } from './commands/task/create.js';
+export { taskListCommand } from './commands/task/list.js';
+export { taskShowCommand } from './commands/task/show.js';
+export {
+  taskDoingCommand,
+  taskDoneCommand,
+  taskReadyCommand,
+  taskWaitCommand,
+} from './commands/task/status.js';
+export { taskUpdateCommand } from './commands/task/update.js';
 export type {
   Config,
   GitHubAuthStatus,
@@ -21,5 +31,14 @@ export type {
   MailboxShowResult,
   SessionState,
   SignalSummary,
+  TaskCard,
+  TaskCreateInput,
+  TaskListFilters,
+  TaskListItem,
+  TaskPriority,
+  TaskStatus,
+  TaskStatusUpdateResult,
+  TaskType,
+  TaskUpdateInput,
   WakeDecision,
 } from './core/types.js';

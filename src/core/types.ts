@@ -92,6 +92,76 @@ export interface MailboxProjectCard {
   status: string;
 }
 
+export type TaskStatus = 'ready' | 'doing' | 'waiting' | 'done';
+export type TaskPriority = 'P1' | 'P2' | 'P3';
+export type TaskType = 'interaction' | 'execution';
+
+export interface TaskCard {
+  id: string;
+  projectId: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority | null;
+  type: TaskType | null;
+  sourceLink: string | null;
+  nextAction: string | null;
+  shortNote: string | null;
+}
+
+export interface TaskListItem {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority | null;
+  type: TaskType | null;
+  sourceLink: string | null;
+}
+
+export interface TaskListFilters {
+  statuses?: TaskStatus[];
+  priority?: TaskPriority;
+  type?: TaskType;
+}
+
+export interface TaskCreateInput {
+  title: string;
+  status: TaskStatus;
+  priority?: TaskPriority | null;
+  type?: TaskType | null;
+  sourceLink?: string | null;
+  nextAction?: string | null;
+  shortNote?: string | null;
+}
+
+export interface TaskUpdateInput {
+  title?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority | null;
+  type?: TaskType | null;
+  sourceLink?: string | null;
+  nextAction?: string | null;
+  shortNote?: string | null;
+}
+
+export interface TaskStatusUpdateSuccessResult {
+  taskId: string;
+  status: TaskStatus;
+  ok: true;
+  task: TaskListItem;
+}
+
+export interface TaskStatusUpdateErrorResult {
+  taskId: string;
+  status: TaskStatus;
+  ok: false;
+  error: string;
+  errorCategory: 'auth' | 'config' | 'runtime';
+}
+
+export type TaskStatusUpdateResult =
+  | TaskStatusUpdateSuccessResult
+  | TaskStatusUpdateErrorResult;
+
 export interface MailboxPromotionSuccessResult {
   threadId: string;
   status: MailboxPromotionStatus;
@@ -211,5 +281,32 @@ export interface GitHubSignalClient {
     config: Config,
     sourceUrl: string,
   ): Promise<MailboxProjectCard[]>;
+  listTaskCards(
+    paths: { ghConfigDir: string },
+    config: Config,
+    filters?: TaskListFilters,
+  ): Promise<TaskListItem[]>;
+  getTaskCard(
+    paths: { ghConfigDir: string },
+    config: Config,
+    taskId: string,
+  ): Promise<TaskCard>;
+  createTaskCard(
+    paths: { ghConfigDir: string },
+    config: Config,
+    input: TaskCreateInput,
+  ): Promise<TaskCard>;
+  updateTaskCard(
+    paths: { ghConfigDir: string },
+    config: Config,
+    taskId: string,
+    input: TaskUpdateInput,
+  ): Promise<TaskCard>;
+  setTaskCardStatus(
+    paths: { ghConfigDir: string },
+    config: Config,
+    taskId: string,
+    status: TaskStatus,
+  ): Promise<TaskCard>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }

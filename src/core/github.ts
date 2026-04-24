@@ -12,12 +12,22 @@ import type {
   MailboxPromotionTarget,
   MailboxThreadDetail,
   SignalSummary,
+  TaskCard,
+  TaskCreateInput,
+  TaskListFilters,
+  TaskListItem,
+  TaskPriority,
+  TaskStatus,
+  TaskType,
+  TaskUpdateInput,
 } from './types.js';
 import type { WorkspacePaths } from './workspace.js';
 
 const ACTIONABLE_STATUS_NAMES = new Set(['Ready', 'Doing']);
 const REQUIRED_STATUS_OPTIONS = ['Ready', 'Doing', 'Waiting', 'Done'] as const;
 const DEFAULT_PROJECT_TITLE = 'gh-agent';
+const TASK_PRIORITY_VALUES = new Set(['P1', 'P2', 'P3']);
+const TASK_TYPE_VALUES = new Set(['interaction', 'execution']);
 
 interface GhExecutionResult {
   stdout: string;
@@ -75,6 +85,7 @@ interface ProjectNode {
 interface ProjectItemNode {
   id?: string;
   content?: {
+    __typename?: string | null;
     title?: string | null;
   } | null;
   fieldValues?: {
@@ -568,6 +579,13 @@ function getProjectItemTitle(item: ProjectItemNode): string | null {
   return contentTitle;
 }
 
+function getProjectItemContentType(item: ProjectItemNode): string | null {
+  return typeof item.content?.__typename === 'string' &&
+    item.content.__typename.length > 0
+    ? item.content.__typename
+    : null;
+}
+
 function getProjectItemStatusName(item: ProjectItemNode): string | null {
   const statusValue = getProjectItemFieldValue(item, 'Status');
 
@@ -585,6 +603,150 @@ function getProjectItemTextValue(
   return typeof textValue?.text === 'string' && textValue.text.length > 0
     ? textValue.text
     : null;
+}
+
+function parseTaskStatusValue(value: string | null): TaskStatus | null {
+  switch (value) {
+    case 'Ready':
+      return 'ready';
+    case 'Doing':
+      return 'doing';
+    case 'Waiting':
+      return 'waiting';
+    case 'Done':
+      return 'done';
+    default:
+      return null;
+  }
+}
+
+function parseTaskPriorityValue(value: string | null): TaskPriority | null {
+  return value !== null && TASK_PRIORITY_VALUES.has(value)
+    ? (value as TaskPriority)
+    : null;
+}
+
+function parseTaskTypeValue(value: string | null): TaskType | null {
+  return value !== null && TASK_TYPE_VALUES.has(value)
+    ? (value as TaskType)
+    : null;
+}
+
+function getTaskStatusSortRank(status: TaskStatus): number {
+  switch (status) {
+    case 'ready':
+      return 0;
+    case 'doing':
+      return 1;
+    case 'waiting':
+      return 2;
+    case 'done':
+      return 3;
+  }
+}
+
+function requireTaskCardFromItem(
+  item: ProjectItemNode,
+  projectId: string,
+): TaskCard {
+  const itemId =
+    typeof item.id === 'string' && item.id.length > 0 ? item.id : null;
+  const title = getProjectItemTitle(item);
+  const status = parseTaskStatusValue(getProjectItemStatusName(item));
+
+  if (itemId === null || title === null || status === null) {
+    throw new GitHubRuntimeError(
+      'GitHub Project contains an item that is missing id, title, or Status.',
+    );
+  }
+
+  return {
+    id: itemId,
+    projectId,
+    title,
+    status,
+    priority: parseTaskPriorityValue(getProjectItemTextValue(item, 'Priority')),
+    type: parseTaskTypeValue(getProjectItemTextValue(item, 'Type')),
+    sourceLink: getProjectItemTextValue(item, 'Source Link'),
+    nextAction: getProjectItemTextValue(item, 'Next Action'),
+    shortNote: getProjectItemTextValue(item, 'Short Note'),
+  };
+}
+
+function toTaskListItem(task: TaskCard): TaskListItem {
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    type: task.type,
+    sourceLink: task.sourceLink,
+  };
+}
+
+function listTaskCardsFromProject(
+  project: ProjectNode,
+  projectId: string,
+): TaskCard[] {
+  return (project.items?.nodes ?? []).map((item) =>
+    requireTaskCardFromItem(item, projectId),
+  );
+}
+
+function applyTaskFilters(
+  tasks: TaskCard[],
+  filters: TaskListFilters = {},
+): TaskCard[] {
+  return tasks.filter((task) => {
+    if (
+      Array.isArray(filters.statuses) &&
+      filters.statuses.length > 0 &&
+      !filters.statuses.includes(task.status)
+    ) {
+      return false;
+    }
+
+    if (filters.priority !== undefined && task.priority !== filters.priority) {
+      return false;
+    }
+
+    if (filters.type !== undefined && task.type !== filters.type) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function sortTaskCards(tasks: TaskCard[]): TaskCard[] {
+  return [...tasks].sort((left, right) => {
+    const rankDifference =
+      getTaskStatusSortRank(left.status) - getTaskStatusSortRank(right.status);
+
+    if (rankDifference !== 0) {
+      return rankDifference;
+    }
+
+    const titleDifference = left.title.localeCompare(right.title);
+
+    if (titleDifference !== 0) {
+      return titleDifference;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function findTaskCard(tasks: TaskCard[], taskId: string): TaskCard {
+  const task = tasks.find((candidate) => candidate.id === taskId);
+
+  if (task === undefined) {
+    throw new GitHubRuntimeError(
+      `GitHub Project item "${taskId}" was not found in the configured project.`,
+    );
+  }
+
+  return task;
 }
 
 function listProjectCardsBySourceLink(
@@ -671,14 +833,22 @@ async function listUnreadNotifications(
 
 function getStatusOptionId(
   config: Config,
-  status: MailboxPromotionStatus,
+  status: TaskStatus | MailboxPromotionStatus,
 ): string {
   assertConfiguredProject(config);
 
-  const optionId =
-    status === 'ready'
-      ? config.projectStatusOptionIds.ready
-      : config.projectStatusOptionIds.waiting;
+  const optionId = (() => {
+    switch (status) {
+      case 'ready':
+        return config.projectStatusOptionIds.ready;
+      case 'doing':
+        return config.projectStatusOptionIds.doing;
+      case 'waiting':
+        return config.projectStatusOptionIds.waiting;
+      case 'done':
+        return config.projectStatusOptionIds.done;
+    }
+  })();
 
   if (optionId === null) {
     throw new GitHubConfigError(
@@ -951,6 +1121,60 @@ async function setProjectItemTextField(
   });
 }
 
+async function clearProjectItemFieldValue(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  itemId: string,
+  fieldId: string,
+): Promise<void> {
+  const query = `
+    mutation ClearProjectItemFieldValue(
+      $projectId: ID!
+      $itemId: ID!
+      $fieldId: ID!
+    ) {
+      clearProjectV2ItemFieldValue(
+        input: {
+          projectId: $projectId
+          itemId: $itemId
+          fieldId: $fieldId
+        }
+      ) {
+        projectV2Item {
+          id
+        }
+      }
+    }
+  `;
+
+  await runGhGraphql(query, paths, {
+    projectId,
+    itemId,
+    fieldId,
+  });
+}
+
+async function updateProjectDraftItemTitle(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  itemId: string,
+  title: string,
+): Promise<void> {
+  const query = `
+    mutation UpdateProjectDraftItemTitle($itemId: ID!, $title: String!) {
+      updateProjectV2DraftIssue(input: { draftIssueId: $itemId, title: $title }) {
+        draftIssue {
+          id
+        }
+      }
+    }
+  `;
+
+  await runGhGraphql(query, paths, {
+    itemId,
+    title,
+  });
+}
+
 async function fetchViewerProjects(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
 ): Promise<ViewerProjectsResponse> {
@@ -1024,12 +1248,15 @@ async function fetchProjectById(
               id
               content {
                 ... on DraftIssue {
+                  __typename
                   title
                 }
                 ... on Issue {
+                  __typename
                   title
                 }
                 ... on PullRequest {
+                  __typename
                   title
                 }
               }
@@ -1099,6 +1326,15 @@ async function fetchProjectByIdWithRetry(
     }`,
     'load_project',
   );
+}
+
+async function loadConfiguredProject(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  config: Config,
+): Promise<ProjectNode> {
+  assertConfiguredProject(config);
+
+  return fetchProjectById(paths, config.projectId as string);
 }
 
 async function createProject(
@@ -1531,12 +1767,223 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     config: Config,
     sourceUrl: string,
   ): Promise<MailboxProjectCard[]> {
+    const projectId = config.projectId as string;
+    const project = await loadConfiguredProject(paths, config);
+
+    return listProjectCardsBySourceLink(project, projectId, sourceUrl);
+  }
+
+  async listTaskCards(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    filters: TaskListFilters = {},
+  ): Promise<TaskListItem[]> {
+    const projectId = config.projectId as string;
+    const project = await loadConfiguredProject(paths, config);
+    const tasks = sortTaskCards(
+      applyTaskFilters(listTaskCardsFromProject(project, projectId), filters),
+    );
+
+    return tasks.map((task) => toTaskListItem(task));
+  }
+
+  async getTaskCard(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    taskId: string,
+  ): Promise<TaskCard> {
+    const projectId = config.projectId as string;
+    const project = await loadConfiguredProject(paths, config);
+    const tasks = listTaskCardsFromProject(project, projectId);
+
+    return findTaskCard(tasks, taskId);
+  }
+
+  async createTaskCard(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    input: TaskCreateInput,
+  ): Promise<TaskCard> {
     assertConfiguredProject(config);
 
     const projectId = config.projectId as string;
-    const project = await fetchProjectById(paths, projectId);
+    const itemId = await addProjectDraftItem(paths, projectId, input.title);
 
-    return listProjectCardsBySourceLink(project, projectId, sourceUrl);
+    await setProjectItemStatus(
+      paths,
+      projectId,
+      itemId,
+      getRequiredProjectFieldId(config.projectFieldIds.status, 'Status'),
+      getStatusOptionId(config, input.status),
+    );
+
+    if (input.priority !== undefined && input.priority !== null) {
+      await setProjectItemTextField(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(config.projectFieldIds.priority, 'Priority'),
+        input.priority,
+      );
+    }
+
+    if (input.type !== undefined && input.type !== null) {
+      await setProjectItemTextField(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(config.projectFieldIds.type, 'Type'),
+        input.type,
+      );
+    }
+
+    if (input.sourceLink !== undefined && input.sourceLink !== null) {
+      await setProjectItemTextField(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(
+          config.projectFieldIds.sourceLink,
+          'Source Link',
+        ),
+        input.sourceLink,
+      );
+    }
+
+    if (input.nextAction !== undefined && input.nextAction !== null) {
+      await setProjectItemTextField(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(
+          config.projectFieldIds.nextAction,
+          'Next Action',
+        ),
+        input.nextAction,
+      );
+    }
+
+    if (input.shortNote !== undefined && input.shortNote !== null) {
+      await setProjectItemTextField(
+        paths,
+        projectId,
+        itemId,
+        getRequiredProjectFieldId(
+          config.projectFieldIds.shortNote,
+          'Short Note',
+        ),
+        input.shortNote,
+      );
+    }
+
+    return this.getTaskCard(paths, config, itemId);
+  }
+
+  async updateTaskCard(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    taskId: string,
+    input: TaskUpdateInput,
+  ): Promise<TaskCard> {
+    assertConfiguredProject(config);
+
+    const projectId = config.projectId as string;
+    const project = await loadConfiguredProject(paths, config);
+    const targetItem = (project.items?.nodes ?? []).find(
+      (item) => item.id === taskId,
+    );
+
+    if (targetItem === undefined) {
+      throw new GitHubRuntimeError(
+        `GitHub Project item "${taskId}" was not found in the configured project.`,
+      );
+    }
+
+    if (input.title !== undefined) {
+      if (getProjectItemContentType(targetItem) !== 'DraftIssue') {
+        throw new GitHubRuntimeError(
+          `GitHub Project item "${taskId}" does not support title updates because it is not a draft task.`,
+        );
+      }
+
+      await updateProjectDraftItemTitle(paths, taskId, input.title);
+    }
+
+    if (input.status !== undefined) {
+      await setProjectItemStatus(
+        paths,
+        projectId,
+        taskId,
+        getRequiredProjectFieldId(config.projectFieldIds.status, 'Status'),
+        getStatusOptionId(config, input.status),
+      );
+    }
+
+    const textFieldUpdates: Array<{
+      value: string | null | undefined;
+      fieldId: string | null;
+      fieldName: string;
+    }> = [
+      {
+        value: input.priority,
+        fieldId: config.projectFieldIds.priority,
+        fieldName: 'Priority',
+      },
+      {
+        value: input.type,
+        fieldId: config.projectFieldIds.type,
+        fieldName: 'Type',
+      },
+      {
+        value: input.sourceLink,
+        fieldId: config.projectFieldIds.sourceLink,
+        fieldName: 'Source Link',
+      },
+      {
+        value: input.nextAction,
+        fieldId: config.projectFieldIds.nextAction,
+        fieldName: 'Next Action',
+      },
+      {
+        value: input.shortNote,
+        fieldId: config.projectFieldIds.shortNote,
+        fieldName: 'Short Note',
+      },
+    ];
+
+    for (const update of textFieldUpdates) {
+      if (update.value === undefined) {
+        continue;
+      }
+
+      const fieldId = getRequiredProjectFieldId(
+        update.fieldId,
+        update.fieldName,
+      );
+
+      if (update.value === null) {
+        await clearProjectItemFieldValue(paths, projectId, taskId, fieldId);
+      } else {
+        await setProjectItemTextField(
+          paths,
+          projectId,
+          taskId,
+          fieldId,
+          update.value,
+        );
+      }
+    }
+
+    return this.getTaskCard(paths, config, taskId);
+  }
+
+  async setTaskCardStatus(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    taskId: string,
+    status: TaskStatus,
+  ): Promise<TaskCard> {
+    return this.updateTaskCard(paths, config, taskId, { status });
   }
 
   async getAuthStatus(

@@ -29,8 +29,49 @@ import {
 import { mailboxShowCommand } from './mailbox/show.js';
 import { runCommand } from './run.js';
 import { statusCommand } from './status.js';
+import { taskCreateCommand } from './task/create.js';
+import {
+  parseTaskPriorityOption,
+  parseTaskStatusFilterOption,
+  parseTaskStatusOption,
+  parseTaskTypeOption,
+} from './task/common.js';
+import { taskListCommand } from './task/list.js';
+import { taskShowCommand } from './task/show.js';
+import {
+  taskDoingCommand,
+  taskDoneCommand,
+  taskReadyCommand,
+  taskWaitCommand,
+} from './task/status.js';
+import { taskUpdateCommand } from './task/update.js';
 
 const { getWorkspaceRoot } = setupWorkspaceTest();
+
+function createTaskFixture(taskId: string) {
+  return {
+    id: taskId,
+    projectId: 'proj_123',
+    title:
+      taskId === 'item_2' ? 'Triage docs cleanup' : 'Add mailbox list command',
+    status: taskId === 'item_2' ? ('waiting' as const) : ('ready' as const),
+    priority: taskId === 'item_2' ? ('P3' as const) : ('P1' as const),
+    type:
+      taskId === 'item_2' ? ('interaction' as const) : ('execution' as const),
+    sourceLink:
+      taskId === 'item_2'
+        ? 'https://github.com/acme/docs/issues/2'
+        : 'https://github.com/acme/widgets/pull/1',
+    nextAction:
+      taskId === 'item_2'
+        ? 'Reply after docs review'
+        : 'Implement the task command set',
+    shortNote:
+      taskId === 'item_2'
+        ? 'Waiting on reviewer feedback'
+        : 'High-priority execution task',
+  };
+}
 
 function createGitHubClientStub(
   unreadCount: number,
@@ -130,6 +171,89 @@ function createGitHubClientStub(
     },
     async markMailboxThreadAsRead() {
       return;
+    },
+    async listTaskCards(_paths, config, filters) {
+      expect(config.projectId).toBe('proj_123');
+
+      const tasks = [createTaskFixture('item_1'), createTaskFixture('item_2')];
+
+      return tasks
+        .filter((task) => {
+          if (
+            Array.isArray(filters?.statuses) &&
+            filters.statuses.length > 0 &&
+            !filters.statuses.includes(task.status)
+          ) {
+            return false;
+          }
+
+          if (
+            filters?.priority !== undefined &&
+            task.priority !== filters.priority
+          ) {
+            return false;
+          }
+
+          if (filters?.type !== undefined && task.type !== filters.type) {
+            return false;
+          }
+
+          return true;
+        })
+        .map(
+          ({
+            projectId: _projectId,
+            nextAction: _nextAction,
+            shortNote: _shortNote,
+            ...task
+          }) => task,
+        );
+    },
+    async getTaskCard(_paths, config, taskId) {
+      expect(config.projectId).toBe('proj_123');
+
+      if (taskId === 'missing_item') {
+        throw new Error(
+          `GitHub Project item "${taskId}" was not found in the configured project.`,
+        );
+      }
+
+      return createTaskFixture(taskId);
+    },
+    async createTaskCard(_paths, config, input) {
+      expect(config.projectId).toBe('proj_123');
+
+      return {
+        id: 'item_created',
+        projectId: config.projectId as string,
+        title: input.title,
+        status: input.status,
+        priority: input.priority ?? null,
+        type: input.type ?? null,
+        sourceLink: input.sourceLink ?? null,
+        nextAction: input.nextAction ?? null,
+        shortNote: input.shortNote ?? null,
+      };
+    },
+    async updateTaskCard(_paths, config, taskId, input) {
+      expect(config.projectId).toBe('proj_123');
+
+      const definedUpdates = Object.fromEntries(
+        Object.entries(input).filter(([, value]) => value !== undefined),
+      );
+
+      return {
+        ...createTaskFixture(taskId),
+        ...definedUpdates,
+      };
+    },
+    async setTaskCardStatus(_paths, config, taskId, status) {
+      expect(config.projectId).toBe('proj_123');
+
+      return {
+        ...createTaskFixture(taskId),
+        status,
+      };
     },
     async getAuthStatus(paths) {
       return {
@@ -580,6 +704,286 @@ describe('commands', () => {
 }`);
   });
 
+  it('taskListCommand prints compact JSON rows', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskListCommand({}, { githubClient: createGitHubClientStub(0, 0) });
+
+    expect(JSON.parse(logs.at(-1) ?? '[]')).toEqual([
+      {
+        id: 'item_1',
+        title: 'Add mailbox list command',
+        status: 'ready',
+        priority: 'P1',
+        type: 'execution',
+        sourceLink: 'https://github.com/acme/widgets/pull/1',
+      },
+      {
+        id: 'item_2',
+        title: 'Triage docs cleanup',
+        status: 'waiting',
+        priority: 'P3',
+        type: 'interaction',
+        sourceLink: 'https://github.com/acme/docs/issues/2',
+      },
+    ]);
+  });
+
+  it('taskListCommand honors status, priority, and type filters', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskListCommand(
+      {
+        statuses: ['waiting'],
+        priority: 'P3',
+        type: 'interaction',
+      },
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+
+    expect(JSON.parse(logs.at(-1) ?? '[]')).toEqual([
+      {
+        id: 'item_2',
+        title: 'Triage docs cleanup',
+        status: 'waiting',
+        priority: 'P3',
+        type: 'interaction',
+        sourceLink: 'https://github.com/acme/docs/issues/2',
+      },
+    ]);
+  });
+
+  it('taskShowCommand prints full card JSON', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskShowCommand(
+      'item_1',
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(`{
+  "id": "item_1",
+  "projectId": "proj_123",
+  "title": "Add mailbox list command",
+  "status": "ready",
+  "priority": "P1",
+  "type": "execution",
+  "sourceLink": "https://github.com/acme/widgets/pull/1",
+  "nextAction": "Implement the task command set",
+  "shortNote": "High-priority execution task"
+}`);
+  });
+
+  it('taskCreateCommand requires title and status and prints the created card JSON', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskCreateCommand(
+      {
+        title: 'Ship task commands',
+        status: 'doing',
+        priority: 'P1',
+        type: 'execution',
+        sourceLink: 'https://github.com/acme/widgets/issues/9',
+        nextAction: 'Finish the CLI wiring',
+        shortNote: 'Created from command test',
+      },
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+
+    expect(logs).toContain(`{
+  "id": "item_created",
+  "projectId": "proj_123",
+  "title": "Ship task commands",
+  "status": "doing",
+  "priority": "P1",
+  "type": "execution",
+  "sourceLink": "https://github.com/acme/widgets/issues/9",
+  "nextAction": "Finish the CLI wiring",
+  "shortNote": "Created from command test"
+}`);
+  });
+
+  it('taskUpdateCommand patches only supplied fields', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskUpdateCommand(
+      'item_1',
+      {
+        status: 'doing',
+        nextAction: 'Write integration tests',
+      },
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+
+    expect(JSON.parse(logs.at(-1) ?? '{}')).toEqual({
+      id: 'item_1',
+      projectId: 'proj_123',
+      title: 'Add mailbox list command',
+      status: 'doing',
+      priority: 'P1',
+      type: 'execution',
+      sourceLink: 'https://github.com/acme/widgets/pull/1',
+      nextAction: 'Write integration tests',
+      shortNote: 'High-priority execution task',
+    });
+  });
+
+  it('taskUpdateCommand errors when no update fields are supplied', async () => {
+    await expect(taskUpdateCommand('item_1')).rejects.toMatchObject({
+      message: 'At least one task field option must be provided for update.',
+      exitCode: 1,
+    });
+  });
+
+  it('task status commands update multiple ids and fail after mixed results', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    await expect(
+      taskDoneCommand(
+        ['item_1', 'item_2'],
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async setTaskCardStatus(_paths, config, taskId, status) {
+              expect(config.projectId).toBe('proj_123');
+
+              if (taskId === 'item_2') {
+                throw new Error('status update failed for item_2');
+              }
+
+              return {
+                ...createTaskFixture(taskId),
+                status,
+              };
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'One or more task status updates failed.',
+      exitCode: 1,
+    });
+
+    expect(logs).toContain(`[
+  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","sourceLink":"https://github.com/acme/widgets/pull/1"}},
+  {"taskId":"item_2","status":"done","ok":false,"error":"status update failed for item_2","errorCategory":"runtime"}
+]`);
+  });
+
+  it('task status aliases force the requested statuses', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await taskReadyCommand(
+      ['item_1'],
+      {},
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+    await taskWaitCommand(
+      ['item_1'],
+      {},
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+    await taskDoingCommand(
+      ['item_1'],
+      {},
+      { githubClient: createGitHubClientStub(0, 0) },
+    );
+
+    const jsonOutputs = logs
+      .filter((line) => line.startsWith('['))
+      .map((line) => JSON.parse(line));
+
+    expect(jsonOutputs).toEqual([
+      [
+        {
+          taskId: 'item_1',
+          status: 'ready',
+          ok: true,
+          task: {
+            id: 'item_1',
+            title: 'Add mailbox list command',
+            status: 'ready',
+            priority: 'P1',
+            type: 'execution',
+            sourceLink: 'https://github.com/acme/widgets/pull/1',
+          },
+        },
+      ],
+      [
+        {
+          taskId: 'item_1',
+          status: 'waiting',
+          ok: true,
+          task: {
+            id: 'item_1',
+            title: 'Add mailbox list command',
+            status: 'waiting',
+            priority: 'P1',
+            type: 'execution',
+            sourceLink: 'https://github.com/acme/widgets/pull/1',
+          },
+        },
+      ],
+      [
+        {
+          taskId: 'item_1',
+          status: 'doing',
+          ok: true,
+          task: {
+            id: 'item_1',
+            title: 'Add mailbox list command',
+            status: 'doing',
+            priority: 'P1',
+            type: 'execution',
+            sourceLink: 'https://github.com/acme/widgets/pull/1',
+          },
+        },
+      ],
+    ]);
+  });
+
+  it('task option parsers reject unsupported values', () => {
+    expect(() => parseTaskStatusOption('blocked')).toThrow(
+      'The status must be one of "ready", "doing", "waiting", or "done".',
+    );
+    expect(() => parseTaskPriorityOption('P0')).toThrow(
+      'The priority must be one of "P1", "P2", or "P3".',
+    );
+    expect(() => parseTaskTypeOption('analysis')).toThrow(
+      'The type must be either "interaction" or "execution".',
+    );
+    expect(parseTaskStatusFilterOption('ready,doing')).toEqual([
+      'ready',
+      'doing',
+    ]);
+  });
+
   it('parseMailboxPromotionStatusOption rejects unsupported statuses', () => {
     expect(() => parseMailboxPromotionStatusOption('done')).toThrow(
       'The --status option must be either "ready" or "waiting".',
@@ -762,6 +1166,21 @@ describe('commands', () => {
           async listRelatedMailboxCards() {
             throw new GitHubAuthError('gh auth login required');
           },
+          async listTaskCards() {
+            throw new GitHubAuthError('gh auth login required');
+          },
+          async getTaskCard() {
+            throw new GitHubAuthError('gh auth login required');
+          },
+          async createTaskCard() {
+            throw new GitHubAuthError('gh auth login required');
+          },
+          async updateTaskCard() {
+            throw new GitHubAuthError('gh auth login required');
+          },
+          async setTaskCardStatus() {
+            throw new GitHubAuthError('gh auth login required');
+          },
           async getAuthStatus(paths) {
             return {
               kind: 'unauthenticated',
@@ -915,6 +1334,59 @@ describe('commands', () => {
   it('mailboxShowCommand maps missing workspaces to exit code 2', async () => {
     await expect(
       mailboxShowCommand('thread_1', {
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
+    });
+  });
+
+  it('task commands map GitHub authentication failures to exit code 3', async () => {
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    const authFailingClient: GitHubSignalClient = {
+      ...createGitHubClientStub(0, 0),
+      async getAuthStatus(paths) {
+        return {
+          kind: 'unauthenticated',
+          detail: 'gh auth login required',
+          ghConfigDir: paths.ghConfigDir,
+        };
+      },
+    };
+
+    await expect(
+      taskListCommand({}, { githubClient: authFailingClient }),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+
+    await expect(
+      taskShowCommand('item_1', {}, { githubClient: authFailingClient }),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+  });
+
+  it('task commands map missing workspaces to exit code 2', async () => {
+    await expect(
+      taskListCommand({
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
+    });
+
+    await expect(
+      taskShowCommand('item_1', {
         cwd: '/tmp/definitely-not-a-gh-agent-workspace',
       }),
     ).rejects.toMatchObject({
