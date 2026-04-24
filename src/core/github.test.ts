@@ -384,7 +384,7 @@ describe('GitHub mailbox mutations', () => {
     });
   });
 
-  it('resolveMailboxThreadDetail loads the canonical thread URL and content node id', async () => {
+  it('resolveMailboxThreadDetail loads the canonical thread URL', async () => {
     octokitRequestMock
       .mockResolvedValueOnce({
         data: {
@@ -423,7 +423,6 @@ describe('GitHub mailbox mutations', () => {
         type: 'PullRequest',
         url: 'https://github.com/acme/widgets/pull/1',
       },
-      contentNodeId: 'node_pull_1',
     });
     expect(octokitConstructorMock).toHaveBeenCalledWith({ auth: 'test-token' });
     expect(octokitRequestMock).toHaveBeenNthCalledWith(
@@ -436,12 +435,12 @@ describe('GitHub mailbox mutations', () => {
     );
   });
 
-  it('promoteMailboxThread adds a project item from content and sets status and source link', async () => {
+  it('promoteMailboxThread creates a draft project item and sets status and source link', async () => {
     octokitGraphqlMock
       .mockResolvedValueOnce({
         data: {
-          addProjectV2ItemById: {
-            item: { id: 'item_123' },
+          addProjectV2DraftIssue: {
+            projectItem: { id: 'item_123' },
           },
         },
       })
@@ -469,7 +468,6 @@ describe('GitHub mailbox mutations', () => {
         title: 'Add mailbox list command',
         repositoryFullName: 'acme/widgets',
         sourceUrl: 'https://github.com/acme/widgets/pull/1',
-        contentNodeId: 'node_pull_1',
       },
       'ready',
     );
@@ -484,10 +482,10 @@ describe('GitHub mailbox mutations', () => {
 
     expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('addProjectV2ItemById'),
+      expect.stringContaining('addProjectV2DraftIssue'),
       {
         projectId: 'proj_123',
-        contentId: 'node_pull_1',
+        title: 'Add mailbox list command',
       },
     );
     expect(octokitGraphqlMock).toHaveBeenNthCalledWith(
@@ -504,7 +502,7 @@ describe('GitHub mailbox mutations', () => {
     );
   });
 
-  it('promoteMailboxThread falls back to a draft project item when no content node id exists', async () => {
+  it('promoteMailboxThread always creates a draft project item for issue notifications too', async () => {
     octokitGraphqlMock
       .mockResolvedValueOnce({
         data: {
@@ -537,7 +535,6 @@ describe('GitHub mailbox mutations', () => {
         title: 'Triage docs cleanup',
         repositoryFullName: 'acme/docs',
         sourceUrl: 'https://github.com/acme/docs/issues/2',
-        contentNodeId: null,
       },
       'waiting',
     );
@@ -607,7 +604,6 @@ describe('GitHub mailbox mutations', () => {
         type: 'Issue',
         url: 'https://github.com/acme/docs/issues/2',
       },
-      contentNodeId: 'node_issue_2',
     });
   });
 

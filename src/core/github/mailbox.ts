@@ -146,7 +146,7 @@ async function getNotificationThread(
 export async function resolveMailboxThreadDetail(
   paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   threadId: string,
-): Promise<MailboxThreadDetail & { contentNodeId: string | null }> {
+): Promise<MailboxThreadDetail> {
   const thread = await getNotificationThread(paths, threadId);
   const repositoryFullName =
     typeof thread.repository?.full_name === 'string' &&
@@ -214,10 +214,6 @@ export async function resolveMailboxThreadDetail(
           : null,
       url: resource.html_url,
     },
-    contentNodeId:
-      typeof resource.node_id === 'string' && resource.node_id.length > 0
-        ? resource.node_id
-        : null,
   };
 }
 

@@ -83,7 +83,6 @@ export interface MailboxThreadDetail {
   isUnread: boolean;
   updatedAt: string | null;
   subject: MailboxThreadSubject;
-  contentNodeId?: string | null;
 }
 
 export interface MailboxPromotionTarget {
@@ -91,7 +90,6 @@ export interface MailboxPromotionTarget {
   title: string;
   repositoryFullName: string;
   sourceUrl: string;
-  contentNodeId: string | null;
 }
 
 export interface MailboxProjectCard {

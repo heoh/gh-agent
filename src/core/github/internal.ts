@@ -149,16 +149,6 @@ export interface UpdateFieldResponse {
   };
 }
 
-export interface AddProjectItemResponse {
-  data?: {
-    addProjectV2ItemById?: {
-      item?: {
-        id?: string;
-      } | null;
-    } | null;
-  };
-}
-
 export interface AddDraftProjectItemResponse {
   data?: {
     addProjectV2DraftIssue?: {

@@ -14,7 +14,6 @@ import {
 } from './errors.js';
 import type {
   AddDraftProjectItemResponse,
-  AddProjectItemResponse,
   CreateFieldResponse,
   CreateProjectResponse,
   ProjectFieldNode,
@@ -330,40 +329,6 @@ export function getRequiredProjectFieldId(
   }
 
   return fieldId;
-}
-
-export async function addProjectItemFromContent(
-  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
-  projectId: string,
-  contentNodeId: string,
-): Promise<string> {
-  const query = `
-    mutation AddProjectItem($projectId: ID!, $contentId: ID!) {
-      addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
-        item {
-          id
-        }
-      }
-    }
-  `;
-
-  const response = await runGitHubGraphql<AddProjectItemResponse>(
-    query,
-    paths,
-    {
-      projectId,
-      contentId: contentNodeId,
-    },
-  );
-  const itemId = response.data?.addProjectV2ItemById?.item?.id;
-
-  if (typeof itemId !== 'string' || itemId.length === 0) {
-    throw new GitHubRuntimeError(
-      'Failed to add the GitHub item to the Project.',
-    );
-  }
-
-  return itemId;
 }
 
 export async function addProjectDraftItem(

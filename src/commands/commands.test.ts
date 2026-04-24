@@ -141,7 +141,6 @@ function createGitHubClientStub(
               ? 'https://github.com/acme/docs/issues/2'
               : 'https://github.com/acme/widgets/pull/1',
         },
-        contentNodeId: `node_${threadId}`,
       };
     },
     async listRelatedMailboxCards(_paths, config, sourceUrl) {

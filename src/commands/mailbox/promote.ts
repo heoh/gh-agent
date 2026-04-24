@@ -109,7 +109,6 @@ async function promoteMailboxThreads(
         title: detail.subject.title,
         repositoryFullName: detail.repositoryFullName,
         sourceUrl: detail.subject.url,
-        contentNodeId: detail.contentNodeId ?? null,
       };
       const card = await githubClient.promoteMailboxThread(
         paths,

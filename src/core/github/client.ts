@@ -33,7 +33,6 @@ import {
 } from './mailbox.js';
 import {
   addProjectDraftItem,
-  addProjectItemFromContent,
   assertConfiguredProject,
   buildProjectConfig,
   clearProjectItemFieldValue,
@@ -121,17 +120,7 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
     threadId: string,
   ): Promise<MailboxThreadDetail> {
-    const detail = await resolveMailboxThreadDetail(paths, threadId);
-
-    return {
-      id: detail.id,
-      repositoryFullName: detail.repositoryFullName,
-      reason: detail.reason,
-      isUnread: detail.isUnread,
-      updatedAt: detail.updatedAt,
-      subject: detail.subject,
-      contentNodeId: detail.contentNodeId,
-    };
+    return resolveMailboxThreadDetail(paths, threadId);
   }
 
   async promoteMailboxThread(
@@ -143,14 +132,7 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     assertConfiguredProject(config);
 
     const projectId = config.projectId as string;
-    const itemId =
-      target.contentNodeId === null
-        ? await addProjectDraftItem(paths, projectId, target.title)
-        : await addProjectItemFromContent(
-            paths,
-            projectId,
-            target.contentNodeId,
-          );
+    const itemId = await addProjectDraftItem(paths, projectId, target.title);
 
     await setProjectItemStatus(
       paths,
