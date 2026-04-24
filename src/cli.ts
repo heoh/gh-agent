@@ -4,6 +4,12 @@ import { Command } from 'commander';
 
 import { initCommand } from './commands/init.js';
 import { mailboxListCommand } from './commands/mailbox/list.js';
+import {
+  mailboxPromoteCommand,
+  parseMailboxPromotionStatusOption,
+  mailboxReadyCommand,
+  mailboxWaitCommand,
+} from './commands/mailbox/promote.js';
 import { runCommand } from './commands/run.js';
 import { statusCommand } from './commands/status.js';
 
@@ -52,6 +58,37 @@ function createProgram(): Command {
       20,
     )
     .action(async (options: { limit: number }) => mailboxListCommand(options));
+
+  mailbox
+    .command('promote')
+    .description(
+      'Promote unread GitHub notification threads into Project cards.',
+    )
+    .argument('<threadId...>', 'One or more GitHub notification thread ids.')
+    .option(
+      '--status <status>',
+      'Initial project status for the promoted cards.',
+      parseMailboxPromotionStatusOption,
+      'ready',
+    )
+    .action(
+      async (threadIds: string[], options: { status: 'ready' | 'waiting' }) =>
+        mailboxPromoteCommand(threadIds, options),
+    );
+
+  mailbox
+    .command('wait')
+    .description(
+      'Promote unread GitHub notification threads into Waiting cards.',
+    )
+    .argument('<threadId...>', 'One or more GitHub notification thread ids.')
+    .action(async (threadIds: string[]) => mailboxWaitCommand(threadIds));
+
+  mailbox
+    .command('ready')
+    .description('Promote unread GitHub notification threads into Ready cards.')
+    .argument('<threadId...>', 'One or more GitHub notification thread ids.')
+    .action(async (threadIds: string[]) => mailboxReadyCommand(threadIds));
 
   return program;
 }

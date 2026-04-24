@@ -5,8 +5,12 @@ import type {
   EnsuredGitHubProject,
   GitHubAuthStatus,
   GitHubProjectConfig,
-  MailboxNotification,
   GitHubSignalClient,
+  MailboxNotification,
+  MailboxProjectCard,
+  MailboxPromotionStatus,
+  MailboxPromotionTarget,
+  MailboxThreadDetail,
   SignalSummary,
 } from './types.js';
 import type { WorkspacePaths } from './workspace.js';
@@ -34,7 +38,14 @@ interface NotificationThread {
   subject?: {
     title?: string;
     type?: string;
+    url?: string;
   } | null;
+}
+
+interface NotificationSubjectResource {
+  html_url?: string;
+  node_id?: string;
+  title?: string;
 }
 
 interface ViewerProjectsResponse {
@@ -110,6 +121,26 @@ interface UpdateFieldResponse {
   data?: {
     updateProjectV2Field?: {
       projectV2Field?: ProjectFieldNode | null;
+    } | null;
+  };
+}
+
+interface AddProjectItemResponse {
+  data?: {
+    addProjectV2ItemById?: {
+      item?: {
+        id?: string;
+      } | null;
+    } | null;
+  };
+}
+
+interface AddDraftProjectItemResponse {
+  data?: {
+    addProjectV2DraftIssue?: {
+      projectItem?: {
+        id?: string;
+      } | null;
     } | null;
   };
 }
@@ -557,6 +588,270 @@ async function listUnreadNotifications(
       : notifications.length;
 
   return notifications.slice(0, Math.max(0, limit));
+}
+
+function getStatusOptionId(
+  config: Config,
+  status: MailboxPromotionStatus,
+): string {
+  assertConfiguredProject(config);
+
+  const optionId =
+    status === 'ready'
+      ? config.projectStatusOptionIds.ready
+      : config.projectStatusOptionIds.waiting;
+
+  if (optionId === null) {
+    throw new GitHubConfigError(
+      `GitHub Project Status option "${status}" is not configured. Run gh-agent init.`,
+    );
+  }
+
+  return optionId;
+}
+
+function getRequiredProjectFieldId(
+  fieldId: string | null,
+  fieldName: string,
+): string {
+  if (fieldId === null) {
+    throw new GitHubConfigError(
+      `GitHub Project field "${fieldName}" is not configured. Run gh-agent init.`,
+    );
+  }
+
+  return fieldId;
+}
+
+function getApiPathFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch (error) {
+    throw new GitHubRuntimeError(
+      `Invalid GitHub API URL: ${url}${
+        error instanceof Error ? ` (${error.message})` : ''
+      }`,
+    );
+  }
+}
+
+async function getNotificationThread(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  threadId: string,
+): Promise<NotificationThread> {
+  const { stdout } = await runGhCommand(
+    ['api', `notifications/threads/${threadId}`],
+    paths,
+  );
+  const thread = JSON.parse(stdout) as NotificationThread;
+
+  if (typeof thread.id !== 'string' || thread.id.length === 0) {
+    throw new GitHubRuntimeError(
+      `GitHub notification thread "${threadId}" was not found.`,
+    );
+  }
+
+  return thread;
+}
+
+export async function resolveMailboxThreadDetail(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  threadId: string,
+): Promise<MailboxThreadDetail & { contentNodeId: string | null }> {
+  const thread = await getNotificationThread(paths, threadId);
+  const repositoryFullName =
+    typeof thread.repository?.full_name === 'string' &&
+    thread.repository.full_name.length > 0
+      ? thread.repository.full_name
+      : typeof thread.repository?.owner?.login === 'string' &&
+          thread.repository.owner.login.length > 0 &&
+          typeof thread.repository?.name === 'string' &&
+          thread.repository.name.length > 0
+        ? `${thread.repository.owner.login}/${thread.repository.name}`
+        : null;
+  const title =
+    typeof thread.subject?.title === 'string' && thread.subject.title.length > 0
+      ? thread.subject.title
+      : null;
+  const subjectUrl =
+    typeof thread.subject?.url === 'string' && thread.subject.url.length > 0
+      ? thread.subject.url
+      : null;
+
+  if (repositoryFullName === null || title === null || subjectUrl === null) {
+    throw new GitHubRuntimeError(
+      `GitHub notification thread "${threadId}" is missing required subject metadata.`,
+    );
+  }
+
+  const { stdout } = await runGhCommand(
+    ['api', getApiPathFromUrl(subjectUrl)],
+    paths,
+  );
+  const resource = JSON.parse(stdout) as NotificationSubjectResource;
+
+  if (typeof resource.html_url !== 'string' || resource.html_url.length === 0) {
+    throw new GitHubRuntimeError(
+      `GitHub notification thread "${threadId}" is missing a canonical source URL.`,
+    );
+  }
+
+  return {
+    id: thread.id as string,
+    repositoryFullName,
+    subject: {
+      title,
+      type:
+        typeof thread.subject?.type === 'string' &&
+        thread.subject.type.length > 0
+          ? thread.subject.type
+          : null,
+      url: resource.html_url,
+    },
+    contentNodeId:
+      typeof resource.node_id === 'string' && resource.node_id.length > 0
+        ? resource.node_id
+        : null,
+  };
+}
+
+async function addProjectItemFromContent(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  contentNodeId: string,
+): Promise<string> {
+  const query = `
+    mutation AddProjectItem($projectId: ID!, $contentId: ID!) {
+      addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+        item {
+          id
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<AddProjectItemResponse>(query, paths, {
+    projectId,
+    contentId: contentNodeId,
+  });
+  const itemId = response.data?.addProjectV2ItemById?.item?.id;
+
+  if (typeof itemId !== 'string' || itemId.length === 0) {
+    throw new GitHubRuntimeError(
+      'Failed to add the GitHub item to the Project.',
+    );
+  }
+
+  return itemId;
+}
+
+async function addProjectDraftItem(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  title: string,
+): Promise<string> {
+  const query = `
+    mutation AddDraftProjectItem($projectId: ID!, $title: String!) {
+      addProjectV2DraftIssue(input: { projectId: $projectId, title: $title }) {
+        projectItem {
+          id
+        }
+      }
+    }
+  `;
+
+  const response = await runGhGraphql<AddDraftProjectItemResponse>(
+    query,
+    paths,
+    {
+      projectId,
+      title,
+    },
+  );
+  const itemId = response.data?.addProjectV2DraftIssue?.projectItem?.id;
+
+  if (typeof itemId !== 'string' || itemId.length === 0) {
+    throw new GitHubRuntimeError(
+      'Failed to create a draft GitHub Project item from the notification.',
+    );
+  }
+
+  return itemId;
+}
+
+async function setProjectItemStatus(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  itemId: string,
+  fieldId: string,
+  optionId: string,
+): Promise<void> {
+  const query = `
+    mutation SetProjectItemStatus(
+      $projectId: ID!
+      $itemId: ID!
+      $fieldId: ID!
+      $optionId: String!
+    ) {
+      updateProjectV2ItemFieldValue(
+        input: {
+          projectId: $projectId
+          itemId: $itemId
+          fieldId: $fieldId
+          value: { singleSelectOptionId: $optionId }
+        }
+      ) {
+        projectV2Item {
+          id
+        }
+      }
+    }
+  `;
+
+  await runGhGraphql(query, paths, {
+    projectId,
+    itemId,
+    fieldId,
+    optionId,
+  });
+}
+
+async function setProjectItemTextField(
+  paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  projectId: string,
+  itemId: string,
+  fieldId: string,
+  value: string,
+): Promise<void> {
+  const query = `
+    mutation SetProjectItemTextField(
+      $projectId: ID!
+      $itemId: ID!
+      $fieldId: ID!
+      $value: String!
+    ) {
+      updateProjectV2ItemFieldValue(
+        input: {
+          projectId: $projectId
+          itemId: $itemId
+          fieldId: $fieldId
+          value: { text: $value }
+        }
+      ) {
+        projectV2Item {
+          id
+        }
+      }
+    }
+  `;
+
+  await runGhGraphql(query, paths, {
+    projectId,
+    itemId,
+    fieldId,
+    value,
+  });
 }
 
 async function fetchViewerProjects(
@@ -1039,6 +1334,75 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     options: { limit?: number } = {},
   ): Promise<MailboxNotification[]> {
     return listUnreadNotifications(paths, options);
+  }
+
+  async getMailboxThreadDetail(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    threadId: string,
+  ): Promise<MailboxThreadDetail> {
+    const detail = await resolveMailboxThreadDetail(paths, threadId);
+
+    return {
+      id: detail.id,
+      repositoryFullName: detail.repositoryFullName,
+      subject: detail.subject,
+      contentNodeId: detail.contentNodeId,
+    };
+  }
+
+  async promoteMailboxThread(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    target: MailboxPromotionTarget,
+    status: MailboxPromotionStatus,
+  ): Promise<MailboxProjectCard> {
+    assertConfiguredProject(config);
+
+    const projectId = config.projectId as string;
+    const itemId =
+      target.contentNodeId === null
+        ? await addProjectDraftItem(paths, projectId, target.title)
+        : await addProjectItemFromContent(
+            paths,
+            projectId,
+            target.contentNodeId,
+          );
+
+    await setProjectItemStatus(
+      paths,
+      projectId,
+      itemId,
+      getRequiredProjectFieldId(config.projectFieldIds.status, 'Status'),
+      getStatusOptionId(config, status),
+    );
+    await setProjectItemTextField(
+      paths,
+      projectId,
+      itemId,
+      getRequiredProjectFieldId(
+        config.projectFieldIds.sourceLink,
+        'Source Link',
+      ),
+      target.sourceUrl,
+    );
+
+    return {
+      id: itemId,
+      projectId,
+      title: target.title,
+      sourceLink: target.sourceUrl,
+      status,
+    };
+  }
+
+  async markMailboxThreadAsRead(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    threadId: string,
+  ): Promise<void> {
+    await runGhCommand(
+      ['api', '--method', 'PATCH', `notifications/threads/${threadId}`],
+      paths,
+    );
   }
 
   async getAuthStatus(

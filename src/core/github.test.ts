@@ -1,9 +1,67 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import {
+import type { Config } from './types.js';
+
+const execFileMock = vi.fn();
+const spawnMock = vi.fn();
+
+vi.mock('node:child_process', () => ({
+  execFile: execFileMock,
+  spawn: spawnMock,
+}));
+
+const githubModule = await import('./github.js');
+
+const {
+  createGitHubSignalClient,
   parseMailboxNotificationsPayload,
+  resolveMailboxThreadDetail,
   sortMailboxNotificationsOldestFirst,
-} from './github.js';
+} = githubModule;
+
+function mockExecFileResponses(
+  responses: Array<{ stdout?: string; stderr?: string; error?: Error }>,
+): void {
+  execFileMock.mockImplementation((_file, _args, _options, callback) => {
+    const response = responses.shift();
+
+    if (response === undefined) {
+      callback(null, '', '');
+      return;
+    }
+
+    callback(
+      response.error ?? null,
+      response.stdout ?? '',
+      response.stderr ?? '',
+    );
+  });
+}
+
+function createConfig(): Config {
+  return {
+    agentId: 'gh-agent',
+    pollIntervalMs: 30_000,
+    debounceMs: 60_000,
+    projectId: 'proj_123',
+    projectTitle: 'gh-agent',
+    projectUrl: 'https://github.com/users/test/projects/1',
+    projectFieldIds: {
+      status: 'field_status',
+      priority: 'field_priority',
+      type: 'field_type',
+      sourceLink: 'field_source_link',
+      nextAction: 'field_next_action',
+      shortNote: 'field_short_note',
+    },
+    projectStatusOptionIds: {
+      ready: 'status_ready',
+      doing: 'status_doing',
+      waiting: 'status_waiting',
+      done: 'status_done',
+    },
+  };
+}
 
 describe('parseMailboxNotificationsPayload', () => {
   it('parses standard notification payloads', () => {
@@ -137,5 +195,198 @@ describe('parseMailboxNotificationsPayload', () => {
       'thread_3',
       'thread_2',
     ]);
+  });
+});
+
+describe('GitHub mailbox mutations', () => {
+  beforeEach(() => {
+    execFileMock.mockReset();
+    spawnMock.mockReset();
+  });
+
+  it('resolveMailboxThreadDetail loads the canonical thread URL and content node id', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          id: 'thread_1',
+          repository: { full_name: 'acme/widgets' },
+          subject: {
+            title: 'Add mailbox list command',
+            type: 'PullRequest',
+            url: 'https://api.github.com/repos/acme/widgets/pulls/1',
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          html_url: 'https://github.com/acme/widgets/pull/1',
+          node_id: 'node_pull_1',
+        }),
+      },
+    ]);
+
+    const detail = await resolveMailboxThreadDetail(
+      { ghConfigDir: '/tmp/gh-config' },
+      'thread_1',
+    );
+
+    expect(detail).toEqual({
+      id: 'thread_1',
+      repositoryFullName: 'acme/widgets',
+      subject: {
+        title: 'Add mailbox list command',
+        type: 'PullRequest',
+        url: 'https://github.com/acme/widgets/pull/1',
+      },
+      contentNodeId: 'node_pull_1',
+    });
+    expect(execFileMock).toHaveBeenNthCalledWith(
+      1,
+      'gh',
+      ['api', 'notifications/threads/thread_1'],
+      expect.any(Object),
+      expect.any(Function),
+    );
+    expect(execFileMock).toHaveBeenNthCalledWith(
+      2,
+      'gh',
+      ['api', '/repos/acme/widgets/pulls/1'],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it('promoteMailboxThread adds a project item from content and sets status and source link', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            addProjectV2ItemById: {
+              item: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_123' },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const card = await client.promoteMailboxThread(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      {
+        threadId: 'thread_1',
+        title: 'Add mailbox list command',
+        repositoryFullName: 'acme/widgets',
+        sourceUrl: 'https://github.com/acme/widgets/pull/1',
+        contentNodeId: 'node_pull_1',
+      },
+      'ready',
+    );
+
+    expect(card).toEqual({
+      id: 'item_123',
+      projectId: 'proj_123',
+      title: 'Add mailbox list command',
+      sourceLink: 'https://github.com/acme/widgets/pull/1',
+      status: 'ready',
+    });
+
+    const graphqlCalls = execFileMock.mock.calls.map((call) => call[1]);
+    expect(graphqlCalls[0]).toContain('graphql');
+    expect(graphqlCalls[0].join(' ')).toContain('addProjectV2ItemById');
+    expect(graphqlCalls[0]).toContain('-F');
+    expect(graphqlCalls[0].join(' ')).toContain('contentId=node_pull_1');
+    expect(graphqlCalls[1].join(' ')).toContain('singleSelectOptionId');
+    expect(graphqlCalls[1].join(' ')).toContain('optionId=status_ready');
+    expect(graphqlCalls[2].join(' ')).toContain('value: { text: $value }');
+    expect(graphqlCalls[2].join(' ')).toContain(
+      'value=https://github.com/acme/widgets/pull/1',
+    );
+  });
+
+  it('promoteMailboxThread falls back to a draft project item when no content node id exists', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            addProjectV2DraftIssue: {
+              projectItem: { id: 'item_draft_1' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_draft_1' },
+            },
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          data: {
+            updateProjectV2ItemFieldValue: {
+              projectV2Item: { id: 'item_draft_1' },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const card = await client.promoteMailboxThread(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      {
+        threadId: 'thread_2',
+        title: 'Triage docs cleanup',
+        repositoryFullName: 'acme/docs',
+        sourceUrl: 'https://github.com/acme/docs/issues/2',
+        contentNodeId: null,
+      },
+      'waiting',
+    );
+
+    expect(card.id).toBe('item_draft_1');
+    expect(execFileMock.mock.calls[0]?.[1].join(' ')).toContain(
+      'addProjectV2DraftIssue',
+    );
+  });
+
+  it('markMailboxThreadAsRead sends the notifications PATCH request', async () => {
+    mockExecFileResponses([{ stdout: '' }]);
+
+    const client = createGitHubSignalClient();
+    await client.markMailboxThreadAsRead(
+      { ghConfigDir: '/tmp/gh-config' },
+      'thread_1',
+    );
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      'gh',
+      ['api', '--method', 'PATCH', 'notifications/threads/thread_1'],
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 });

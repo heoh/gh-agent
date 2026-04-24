@@ -58,6 +58,56 @@ export interface MailboxNotification {
   updatedAt: string | null;
 }
 
+export type MailboxPromotionStatus = 'ready' | 'waiting';
+
+export interface MailboxThreadSubject {
+  title: string;
+  type: string | null;
+  url: string;
+}
+
+export interface MailboxThreadDetail {
+  id: string;
+  repositoryFullName: string;
+  subject: MailboxThreadSubject;
+  contentNodeId?: string | null;
+}
+
+export interface MailboxPromotionTarget {
+  threadId: string;
+  title: string;
+  repositoryFullName: string;
+  sourceUrl: string;
+  contentNodeId: string | null;
+}
+
+export interface MailboxProjectCard {
+  id: string;
+  projectId: string;
+  title: string;
+  sourceLink: string;
+  status: MailboxPromotionStatus;
+}
+
+export interface MailboxPromotionSuccessResult {
+  threadId: string;
+  status: MailboxPromotionStatus;
+  ok: true;
+  card: MailboxProjectCard;
+}
+
+export interface MailboxPromotionErrorResult {
+  threadId: string;
+  status: MailboxPromotionStatus;
+  ok: false;
+  error: string;
+  errorCategory: 'auth' | 'config' | 'runtime';
+}
+
+export type MailboxPromotionResult =
+  | MailboxPromotionSuccessResult
+  | MailboxPromotionErrorResult;
+
 export interface WakeDecision {
   shouldWake: boolean;
   blockedByCooldown: boolean;
@@ -110,5 +160,19 @@ export interface GitHubSignalClient {
     paths: { ghConfigDir: string },
     options?: { limit?: number },
   ): Promise<MailboxNotification[]>;
+  getMailboxThreadDetail(
+    paths: { ghConfigDir: string },
+    threadId: string,
+  ): Promise<MailboxThreadDetail>;
+  promoteMailboxThread(
+    paths: { ghConfigDir: string },
+    config: Config,
+    target: MailboxPromotionTarget,
+    status: MailboxPromotionStatus,
+  ): Promise<MailboxProjectCard>;
+  markMailboxThreadAsRead(
+    paths: { ghConfigDir: string },
+    threadId: string,
+  ): Promise<void>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }
