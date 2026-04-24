@@ -69,6 +69,9 @@ export interface MailboxThreadSubject {
 export interface MailboxThreadDetail {
   id: string;
   repositoryFullName: string;
+  reason: string;
+  isUnread: boolean;
+  updatedAt: string | null;
   subject: MailboxThreadSubject;
   contentNodeId?: string | null;
 }
@@ -86,7 +89,7 @@ export interface MailboxProjectCard {
   projectId: string;
   title: string;
   sourceLink: string;
-  status: MailboxPromotionStatus;
+  status: string;
 }
 
 export interface MailboxPromotionSuccessResult {
@@ -107,6 +110,35 @@ export interface MailboxPromotionErrorResult {
 export type MailboxPromotionResult =
   | MailboxPromotionSuccessResult
   | MailboxPromotionErrorResult;
+
+export interface MailboxIgnoreSuccessResult {
+  threadId: string;
+  ok: true;
+  read: true;
+}
+
+export interface MailboxIgnoreErrorResult {
+  threadId: string;
+  ok: false;
+  error: string;
+  errorCategory: 'auth' | 'config' | 'runtime';
+}
+
+export type MailboxIgnoreResult =
+  | MailboxIgnoreSuccessResult
+  | MailboxIgnoreErrorResult;
+
+export interface MailboxShowResult {
+  threadId: string;
+  repositoryFullName: string;
+  title: string;
+  reason: string;
+  type: string | null;
+  unread: boolean;
+  updatedAt: string | null;
+  sourceUrl: string;
+  relatedCards: MailboxProjectCard[];
+}
 
 export interface WakeDecision {
   shouldWake: boolean;
@@ -174,5 +206,10 @@ export interface GitHubSignalClient {
     paths: { ghConfigDir: string },
     threadId: string,
   ): Promise<void>;
+  listRelatedMailboxCards(
+    paths: { ghConfigDir: string },
+    config: Config,
+    sourceUrl: string,
+  ): Promise<MailboxProjectCard[]>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
 }

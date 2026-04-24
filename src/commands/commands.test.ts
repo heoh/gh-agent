@@ -18,6 +18,7 @@ import {
   setupWorkspaceTest,
 } from '../test/test-helpers.js';
 import { initCommand } from './init.js';
+import { mailboxIgnoreCommand } from './mailbox/ignore.js';
 import { mailboxListCommand } from './mailbox/list.js';
 import {
   mailboxPromoteCommand,
@@ -25,6 +26,7 @@ import {
   parseMailboxPromotionStatusOption,
   mailboxWaitCommand,
 } from './mailbox/promote.js';
+import { mailboxShowCommand } from './mailbox/show.js';
 import { runCommand } from './run.js';
 import { statusCommand } from './status.js';
 
@@ -78,6 +80,12 @@ function createGitHubClientStub(
         id: threadId,
         repositoryFullName:
           threadId === 'thread_2' ? 'acme/docs' : 'acme/widgets',
+        reason: threadId === 'thread_2' ? 'mention' : 'review_requested',
+        isUnread: threadId !== 'thread_read',
+        updatedAt:
+          threadId === 'thread_2'
+            ? '2026-04-21T10:00:00.000Z'
+            : '2026-04-20T10:00:00.000Z',
         subject: {
           title:
             threadId === 'thread_2'
@@ -91,6 +99,23 @@ function createGitHubClientStub(
         },
         contentNodeId: `node_${threadId}`,
       };
+    },
+    async listRelatedMailboxCards(_paths, config, sourceUrl) {
+      expect(config.projectId).toBe('proj_123');
+
+      if (sourceUrl === 'https://github.com/acme/docs/issues/2') {
+        return [];
+      }
+
+      return [
+        {
+          id: 'item_related_1',
+          projectId: config.projectId as string,
+          title: 'Add mailbox list command',
+          sourceLink: 'https://github.com/acme/widgets/pull/1',
+          status: 'ready',
+        },
+      ];
     },
     async promoteMailboxThread(_paths, config, target, status) {
       expect(config.projectId).toBe('proj_123');
@@ -429,6 +454,132 @@ describe('commands', () => {
 ]`);
   });
 
+  it('mailboxIgnoreCommand marks multiple threads as read and prints JSON results', async () => {
+    const logs = captureConsoleLogs();
+    const markedAsRead: string[] = [];
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxIgnoreCommand(
+      ['thread_1', 'thread_2'],
+      {},
+      {
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async markMailboxThreadAsRead(_paths, threadId) {
+            markedAsRead.push(threadId);
+          },
+        },
+      },
+    );
+
+    expect(markedAsRead).toEqual(['thread_1', 'thread_2']);
+    expect(logs).toContain(`[
+  {"threadId":"thread_1","ok":true,"read":true},
+  {"threadId":"thread_2","ok":true,"read":true}
+]`);
+  });
+
+  it('mailboxIgnoreCommand processes every thread and fails after mixed results', async () => {
+    const logs = captureConsoleLogs();
+    const markedAsRead: string[] = [];
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    await expect(
+      mailboxIgnoreCommand(
+        ['thread_1', 'thread_2'],
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async markMailboxThreadAsRead(_paths, threadId) {
+              if (threadId === 'thread_2') {
+                throw new Error('ignore failed for thread_2');
+              }
+
+              markedAsRead.push(threadId);
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'One or more mailbox thread ignores failed.',
+      exitCode: 1,
+    });
+
+    expect(markedAsRead).toEqual(['thread_1']);
+    expect(logs).toContain(`[
+  {"threadId":"thread_1","ok":true,"read":true},
+  {"threadId":"thread_2","ok":false,"error":"ignore failed for thread_2","errorCategory":"runtime"}
+]`);
+  });
+
+  it('mailboxShowCommand prints thread details and related cards as JSON', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxShowCommand(
+      'thread_1',
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(`{
+  "threadId": "thread_1",
+  "repositoryFullName": "acme/widgets",
+  "title": "Add mailbox list command",
+  "reason": "review_requested",
+  "type": "PullRequest",
+  "unread": true,
+  "updatedAt": "2026-04-20T10:00:00.000Z",
+  "sourceUrl": "https://github.com/acme/widgets/pull/1",
+  "relatedCards": [
+    {
+      "id": "item_related_1",
+      "projectId": "proj_123",
+      "title": "Add mailbox list command",
+      "sourceLink": "https://github.com/acme/widgets/pull/1",
+      "status": "ready"
+    }
+  ]
+}`);
+  });
+
+  it('mailboxShowCommand returns an empty relatedCards array when no exact match exists', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    await mailboxShowCommand(
+      'thread_2',
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(`{
+  "threadId": "thread_2",
+  "repositoryFullName": "acme/docs",
+  "title": "Triage docs cleanup",
+  "reason": "mention",
+  "type": "Issue",
+  "unread": true,
+  "updatedAt": "2026-04-21T10:00:00.000Z",
+  "sourceUrl": "https://github.com/acme/docs/issues/2",
+  "relatedCards": []
+}`);
+  });
+
   it('parseMailboxPromotionStatusOption rejects unsupported statuses', () => {
     expect(() => parseMailboxPromotionStatusOption('done')).toThrow(
       'The --status option must be either "ready" or "waiting".',
@@ -608,6 +759,9 @@ describe('commands', () => {
           async markMailboxThreadAsRead() {
             throw new GitHubAuthError('gh auth login required');
           },
+          async listRelatedMailboxCards() {
+            throw new GitHubAuthError('gh auth login required');
+          },
           async getAuthStatus(paths) {
             return {
               kind: 'unauthenticated',
@@ -681,6 +835,86 @@ describe('commands', () => {
   it('mailboxPromoteCommand maps missing workspaces to exit code 2', async () => {
     await expect(
       mailboxPromoteCommand(['thread_1'], {
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
+    });
+  });
+
+  it('mailboxIgnoreCommand maps GitHub authentication failures to exit code 3', async () => {
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    await expect(
+      mailboxIgnoreCommand(
+        ['thread_1'],
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async getAuthStatus(paths) {
+              return {
+                kind: 'unauthenticated',
+                detail: 'gh auth login required',
+                ghConfigDir: paths.ghConfigDir,
+              };
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+  });
+
+  it('mailboxIgnoreCommand maps missing workspaces to exit code 2', async () => {
+    await expect(
+      mailboxIgnoreCommand(['thread_1'], {
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
+    });
+  });
+
+  it('mailboxShowCommand maps GitHub authentication failures to exit code 3', async () => {
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    await expect(
+      mailboxShowCommand(
+        'thread_1',
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async getAuthStatus(paths) {
+              return {
+                kind: 'unauthenticated',
+                detail: 'gh auth login required',
+                ghConfigDir: paths.ghConfigDir,
+              };
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'GitHub authentication error: gh auth login required',
+      exitCode: 3,
+    });
+  });
+
+  it('mailboxShowCommand maps missing workspaces to exit code 2', async () => {
+    await expect(
+      mailboxShowCommand('thread_1', {
         cwd: '/tmp/definitely-not-a-gh-agent-workspace',
       }),
     ).rejects.toMatchObject({

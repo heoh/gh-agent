@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 
 import { initCommand } from './commands/init.js';
+import { mailboxIgnoreCommand } from './commands/mailbox/ignore.js';
 import { mailboxListCommand } from './commands/mailbox/list.js';
 import {
   mailboxPromoteCommand,
@@ -10,6 +11,7 @@ import {
   mailboxReadyCommand,
   mailboxWaitCommand,
 } from './commands/mailbox/promote.js';
+import { mailboxShowCommand } from './commands/mailbox/show.js';
 import { runCommand } from './commands/run.js';
 import { statusCommand } from './commands/status.js';
 
@@ -89,6 +91,22 @@ function createProgram(): Command {
     .description('Promote unread GitHub notification threads into Ready cards.')
     .argument('<threadId...>', 'One or more GitHub notification thread ids.')
     .action(async (threadIds: string[]) => mailboxReadyCommand(threadIds));
+
+  mailbox
+    .command('ignore')
+    .description(
+      'Mark unread GitHub notification threads as read without promoting them.',
+    )
+    .argument('<threadId...>', 'One or more GitHub notification thread ids.')
+    .action(async (threadIds: string[]) => mailboxIgnoreCommand(threadIds));
+
+  mailbox
+    .command('show')
+    .description(
+      'Show detailed mailbox information for a GitHub notification thread.',
+    )
+    .argument('<threadId>', 'A GitHub notification thread id.')
+    .action(async (threadId: string) => mailboxShowCommand(threadId));
 
   return program;
 }

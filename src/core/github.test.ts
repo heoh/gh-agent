@@ -209,6 +209,9 @@ describe('GitHub mailbox mutations', () => {
       {
         stdout: JSON.stringify({
           id: 'thread_1',
+          unread: true,
+          reason: 'review_requested',
+          updated_at: '2026-04-20T10:00:00Z',
           repository: { full_name: 'acme/widgets' },
           subject: {
             title: 'Add mailbox list command',
@@ -233,6 +236,9 @@ describe('GitHub mailbox mutations', () => {
     expect(detail).toEqual({
       id: 'thread_1',
       repositoryFullName: 'acme/widgets',
+      reason: 'review_requested',
+      isUnread: true,
+      updatedAt: '2026-04-20T10:00:00.000Z',
       subject: {
         title: 'Add mailbox list command',
         type: 'PullRequest',
@@ -388,5 +394,157 @@ describe('GitHub mailbox mutations', () => {
       expect.any(Object),
       expect.any(Function),
     );
+  });
+
+  it('getMailboxThreadDetail exposes unread state and canonical URL for show', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          id: 'thread_2',
+          unread: false,
+          reason: 'mention',
+          updated_at: '2026-04-21T10:00:00Z',
+          repository: { full_name: 'acme/docs' },
+          subject: {
+            title: 'Triage docs cleanup',
+            type: 'Issue',
+            url: 'https://api.github.com/repos/acme/docs/issues/2',
+          },
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          html_url: 'https://github.com/acme/docs/issues/2',
+          node_id: 'node_issue_2',
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const detail = await client.getMailboxThreadDetail(
+      { ghConfigDir: '/tmp/gh-config' },
+      'thread_2',
+    );
+
+    expect(detail).toEqual({
+      id: 'thread_2',
+      repositoryFullName: 'acme/docs',
+      reason: 'mention',
+      isUnread: false,
+      updatedAt: '2026-04-21T10:00:00.000Z',
+      subject: {
+        title: 'Triage docs cleanup',
+        type: 'Issue',
+        url: 'https://github.com/acme/docs/issues/2',
+      },
+      contentNodeId: 'node_issue_2',
+    });
+  });
+
+  it('listRelatedMailboxCards returns exact Source Link matches only', async () => {
+    mockExecFileResponses([
+      {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: 'proj_123',
+              title: 'gh-agent',
+              url: 'https://github.com/users/test/projects/1',
+              fields: {
+                nodes: [
+                  {
+                    id: 'field_status',
+                    name: 'Status',
+                    dataType: 'SINGLE_SELECT',
+                    options: [
+                      { id: 'status_ready', name: 'Ready' },
+                      { id: 'status_doing', name: 'Doing' },
+                      { id: 'status_waiting', name: 'Waiting' },
+                      { id: 'status_done', name: 'Done' },
+                    ],
+                  },
+                  { id: 'field_priority', name: 'Priority', dataType: 'TEXT' },
+                  { id: 'field_type', name: 'Type', dataType: 'TEXT' },
+                  {
+                    id: 'field_source_link',
+                    name: 'Source Link',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_next_action',
+                    name: 'Next Action',
+                    dataType: 'TEXT',
+                  },
+                  {
+                    id: 'field_short_note',
+                    name: 'Short Note',
+                    dataType: 'TEXT',
+                  },
+                ],
+              },
+              items: {
+                nodes: [
+                  {
+                    id: 'item_match',
+                    content: { title: 'Matching card' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Ready',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'https://github.com/acme/widgets/pull/1',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    id: 'item_other',
+                    content: { title: 'Other card' },
+                    fieldValues: {
+                      nodes: [
+                        {
+                          name: 'Waiting',
+                          field: { id: 'field_status', name: 'Status' },
+                        },
+                        {
+                          text: 'https://github.com/acme/widgets/pull/99',
+                          field: {
+                            id: 'field_source_link',
+                            name: 'Source Link',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
+    ]);
+
+    const client = createGitHubSignalClient();
+    const cards = await client.listRelatedMailboxCards(
+      { ghConfigDir: '/tmp/gh-config' },
+      createConfig(),
+      'https://github.com/acme/widgets/pull/1',
+    );
+
+    expect(cards).toEqual([
+      {
+        id: 'item_match',
+        projectId: 'proj_123',
+        title: 'Matching card',
+        sourceLink: 'https://github.com/acme/widgets/pull/1',
+        status: 'Ready',
+      },
+    ]);
   });
 });

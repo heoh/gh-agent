@@ -27,6 +27,7 @@ interface GhExecutionResult {
 interface NotificationThread {
   id?: string;
   reason?: string;
+  unread?: boolean;
   updated_at?: string;
   repository?: {
     full_name?: string;
@@ -72,6 +73,10 @@ interface ProjectNode {
 }
 
 interface ProjectItemNode {
+  id?: string;
+  content?: {
+    title?: string | null;
+  } | null;
   fieldValues?: {
     nodes?: ProjectFieldValueNode[];
   } | null;
@@ -79,6 +84,7 @@ interface ProjectItemNode {
 
 interface ProjectFieldValueNode {
   name?: string | null;
+  text?: string | null;
   field?: {
     id?: string | null;
     name?: string | null;
@@ -542,6 +548,79 @@ function countActionableProjectItems(project: ProjectNode): number {
   ).length;
 }
 
+function getProjectItemFieldValue(
+  item: ProjectItemNode,
+  fieldName: string,
+): ProjectFieldValueNode | null {
+  return (
+    (item.fieldValues?.nodes ?? []).find(
+      (fieldValue) => fieldValue.field?.name === fieldName,
+    ) ?? null
+  );
+}
+
+function getProjectItemTitle(item: ProjectItemNode): string | null {
+  const contentTitle =
+    typeof item.content?.title === 'string' && item.content.title.length > 0
+      ? item.content.title
+      : null;
+
+  return contentTitle;
+}
+
+function getProjectItemStatusName(item: ProjectItemNode): string | null {
+  const statusValue = getProjectItemFieldValue(item, 'Status');
+
+  return typeof statusValue?.name === 'string' && statusValue.name.length > 0
+    ? statusValue.name
+    : null;
+}
+
+function getProjectItemTextValue(
+  item: ProjectItemNode,
+  fieldName: string,
+): string | null {
+  const textValue = getProjectItemFieldValue(item, fieldName);
+
+  return typeof textValue?.text === 'string' && textValue.text.length > 0
+    ? textValue.text
+    : null;
+}
+
+function listProjectCardsBySourceLink(
+  project: ProjectNode,
+  projectId: string,
+  sourceUrl: string,
+): MailboxProjectCard[] {
+  return (project.items?.nodes ?? []).flatMap((item) => {
+    const itemId =
+      typeof item.id === 'string' && item.id.length > 0 ? item.id : null;
+    const title = getProjectItemTitle(item);
+    const status = getProjectItemStatusName(item);
+    const sourceLink = getProjectItemTextValue(item, 'Source Link');
+
+    if (
+      itemId === null ||
+      title === null ||
+      status === null ||
+      sourceLink === null ||
+      sourceLink !== sourceUrl
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: itemId,
+        projectId,
+        title,
+        sourceLink,
+        status,
+      },
+    ];
+  });
+}
+
 function assertConfiguredProject(config: Config): void {
   if (
     config.projectId === null ||
@@ -674,12 +753,27 @@ export async function resolveMailboxThreadDetail(
     typeof thread.subject?.title === 'string' && thread.subject.title.length > 0
       ? thread.subject.title
       : null;
+  const reason =
+    typeof thread.reason === 'string' && thread.reason.length > 0
+      ? thread.reason
+      : null;
   const subjectUrl =
     typeof thread.subject?.url === 'string' && thread.subject.url.length > 0
       ? thread.subject.url
       : null;
+  const updatedAt =
+    typeof thread.updated_at === 'string' &&
+    !Number.isNaN(new Date(thread.updated_at).getTime())
+      ? new Date(thread.updated_at).toISOString()
+      : null;
+  const isUnread = thread.unread === true;
 
-  if (repositoryFullName === null || title === null || subjectUrl === null) {
+  if (
+    repositoryFullName === null ||
+    title === null ||
+    reason === null ||
+    subjectUrl === null
+  ) {
     throw new GitHubRuntimeError(
       `GitHub notification thread "${threadId}" is missing required subject metadata.`,
     );
@@ -700,6 +794,9 @@ export async function resolveMailboxThreadDetail(
   return {
     id: thread.id as string,
     repositoryFullName,
+    reason,
+    isUnread,
+    updatedAt,
     subject: {
       title,
       type:
@@ -924,12 +1021,33 @@ async function fetchProjectById(
           }
           items(first: 100) {
             nodes {
+              id
+              content {
+                ... on DraftIssue {
+                  title
+                }
+                ... on Issue {
+                  title
+                }
+                ... on PullRequest {
+                  title
+                }
+              }
               fieldValues(first: 20) {
                 nodes {
                   ... on ProjectV2ItemFieldSingleSelectValue {
                     name
                     field {
                       ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                      }
+                    }
+                  }
+                  ... on ProjectV2ItemFieldTextValue {
+                    text
+                    field {
+                      ... on ProjectV2FieldCommon {
                         id
                         name
                       }
@@ -1345,6 +1463,9 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     return {
       id: detail.id,
       repositoryFullName: detail.repositoryFullName,
+      reason: detail.reason,
+      isUnread: detail.isUnread,
+      updatedAt: detail.updatedAt,
       subject: detail.subject,
       contentNodeId: detail.contentNodeId,
     };
@@ -1403,6 +1524,19 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
       ['api', '--method', 'PATCH', `notifications/threads/${threadId}`],
       paths,
     );
+  }
+
+  async listRelatedMailboxCards(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    config: Config,
+    sourceUrl: string,
+  ): Promise<MailboxProjectCard[]> {
+    assertConfiguredProject(config);
+
+    const projectId = config.projectId as string;
+    const project = await fetchProjectById(paths, projectId);
+
+    return listProjectCardsBySourceLink(project, projectId, sourceUrl);
   }
 
   async getAuthStatus(
