@@ -27,6 +27,8 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - `.gh-agent/` 초기화
 - GitHub 인증 준비 또는 `gh auth login` 유도
 - 필수 설정 검증
+- 기본 에이전트 실행 command 기본값 준비
+- heavy 에이전트 실행 command 자리 확보
 
 ### Inputs
 
@@ -62,7 +64,8 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - notification poll
 - project board actionable 확인
 - wake decision 평가
-- 필요 시 agent session 실행
+- 필요 시 agent class selection
+- 선택된 agent command로 agent session 실행
 - 세션 종료 후 polling으로 복귀
 
 ### Main Loop Behavior
@@ -74,9 +77,10 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 3. poll notifications
 4. inspect project board
 5. evaluate wake decision
-6. if needed, launch agent session
-7. record session end
-8. return to poll
+6. if needed, select agent class
+7. launch selected agent session
+8. record session end
+9. return to poll
 
 ### Output
 
@@ -86,6 +90,7 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 
 - polling started
 - unread=2 actionable=1 should_wake=true
+- selected_agent=default
 - session started: sess\_...
 - session ended
 - back to polling
@@ -107,6 +112,9 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 ### Suggested Output Fields
 
 - current mode
+- default agent command configured 여부
+- heavy agent command configured 여부
+- 최근 selection rule 요약 또는 selected agent class
 - last poll time
 - last session started/ended time
 - unread summary

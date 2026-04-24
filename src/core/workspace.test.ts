@@ -29,6 +29,8 @@ describe('workspace normalization', () => {
     );
     expect(config).toEqual({
       agentId: 'gh-agent',
+      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
       projectId: null,
@@ -73,6 +75,8 @@ describe('workspace normalization', () => {
       paths.configFile,
       JSON.stringify({
         agentId: 'custom-agent',
+        defaultAgentCommand: '',
+        heavyAgentCommand: 123,
         pollIntervalMs: -1,
         debounceMs: 'invalid',
       }),
@@ -83,6 +87,8 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'custom-agent',
+      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
       projectId: null,
@@ -119,6 +125,8 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'gh-agent',
+      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
       projectId: null,
@@ -144,6 +152,24 @@ describe('workspace normalization', () => {
         heavy: null,
       },
     });
+  });
+
+  it('preserves configured agent commands and clears an empty heavy command', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await ensureWorkspaceStructure(paths);
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'codex --profile default',
+        heavyAgentCommand: '',
+      }),
+      'utf8',
+    );
+
+    const config = await ensureConfig(paths);
+
+    expect(config.defaultAgentCommand).toBe('codex --profile default');
+    expect(config.heavyAgentCommand).toBeNull();
   });
 
   it('rewrites legacy session state into the current schema', async () => {

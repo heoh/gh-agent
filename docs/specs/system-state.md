@@ -55,12 +55,15 @@
 | debounce_blocked          | debounce 때문에 막혔는지 여부          |
 | wake_reason_summary       | 판단 요약 문자열                       |
 | created_session_id        | 실제 세션을 열었으면 그 세션 ID        |
+| selected_agent_class      | 선택된 agent class가 있으면 그 값      |
 
 ### Semantics
 
 - wake_decision은 audit/debug 목적의 운영 로그다.
 - 업무 의미를 담는 레코드가 아니다.
 - 반드시 영구 저장할 필요는 없지만, 최근 N개는 유지하는 것을 권장한다.
+- `selected_agent_class` 는 `default` 또는 `heavy` 로 남길 수 있다.
+- heavy command가 비어 있어 기본 command로 폴백한 경우, selection 결과와 실제 실행 command class를 구분해 기록할 수 있다.
 
 ## Persistence Rules
 

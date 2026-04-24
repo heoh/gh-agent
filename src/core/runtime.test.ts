@@ -137,6 +137,8 @@ describe('session state transitions', () => {
       },
       {
         agentId: 'gh-agent',
+        defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+        heavyAgentCommand: null,
         pollIntervalMs: 30_000,
         debounceMs: 60_000,
         projectId: null,

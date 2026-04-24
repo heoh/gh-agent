@@ -60,6 +60,8 @@ function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptio
 
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
+  defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+  heavyAgentCommand: null,
   pollIntervalMs: 30_000,
   debounceMs: 60_000,
   projectId: null,
@@ -146,6 +148,16 @@ function normalizeConfig(raw: unknown): Config {
       typeof record.agentId === 'string' && record.agentId.length > 0
         ? record.agentId
         : DEFAULT_CONFIG.agentId,
+    defaultAgentCommand:
+      typeof record.defaultAgentCommand === 'string' &&
+      record.defaultAgentCommand.length > 0
+        ? record.defaultAgentCommand
+        : DEFAULT_CONFIG.defaultAgentCommand,
+    heavyAgentCommand:
+      typeof record.heavyAgentCommand === 'string' &&
+      record.heavyAgentCommand.length > 0
+        ? record.heavyAgentCommand
+        : null,
     pollIntervalMs:
       typeof record.pollIntervalMs === 'number' &&
       Number.isFinite(record.pollIntervalMs) &&

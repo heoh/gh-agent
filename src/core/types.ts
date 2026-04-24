@@ -24,6 +24,8 @@ export interface ProjectExecutionClassOptionIds {
 
 export interface Config {
   agentId: string;
+  defaultAgentCommand: string;
+  heavyAgentCommand: string | null;
   pollIntervalMs: number;
   debounceMs: number;
   projectId: string | null;
