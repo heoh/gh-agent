@@ -106,8 +106,6 @@ export async function runCommand(
     process.on('SIGTERM', stopHandler);
 
     while (!shouldStop) {
-      console.log('Polling started');
-
       const now = new Date();
       const previousAgentMode = state.currentMode;
       const signals = await githubClient.getSignalSummary(paths, config);
@@ -223,7 +221,6 @@ export async function runCommand(
         agentCommand,
         sessionExitCode,
       });
-      console.log('Polling complete');
 
       completedPollCycles += 1;
       if (

@@ -402,12 +402,10 @@ describe('commands', () => {
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(await readLockInfo(paths.lockFile)).toBeNull();
-    expect(logs).toContain('Polling started');
     expect(logs.some((line) => line.startsWith('Session started: sess_'))).toBe(
       true,
     );
     expect(logs).toContain('Session ended');
-    expect(logs).toContain('Polling complete');
   });
 
   it('runCommand respects cooldown and still releases the lock', async () => {

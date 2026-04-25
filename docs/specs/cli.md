@@ -88,12 +88,10 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 
 예시:
 
-- polling started
 - unread=2 actionable=1 should_wake=true
 - selected_agent=default
 - session started: sess\_...
 - session ended
-- back to polling
 
 ### Exit Conditions
 
