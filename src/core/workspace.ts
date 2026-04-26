@@ -10,7 +10,6 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { DEFAULT_AGENTS_MD } from './default-agents-md.js';
 import type {
   Config,
   GitIdentity,
@@ -35,6 +34,11 @@ export interface WorkspacePaths {
 }
 
 export class WorkspaceNotFoundError extends Error {}
+const DEFAULT_AGENTS_TEMPLATE_URL = new URL(
+  './default-agents.md',
+  import.meta.url,
+);
+let cachedDefaultAgentsTemplate: string | null = null;
 
 function createEmptyProjectFieldIds(): ProjectFieldIds {
   return {
@@ -334,8 +338,21 @@ export async function ensureAgentsGuide(
     return { created: false };
   }
 
-  await writeFile(paths.agentsFile, DEFAULT_AGENTS_MD, 'utf8');
+  const template = await loadDefaultAgentsTemplate();
+  await writeFile(paths.agentsFile, template, 'utf8');
   return { created: true };
+}
+
+async function loadDefaultAgentsTemplate(): Promise<string> {
+  if (cachedDefaultAgentsTemplate !== null) {
+    return cachedDefaultAgentsTemplate;
+  }
+
+  cachedDefaultAgentsTemplate = await readFile(
+    DEFAULT_AGENTS_TEMPLATE_URL,
+    'utf8',
+  );
+  return cachedDefaultAgentsTemplate;
 }
 
 export async function writeJsonAtomic(
