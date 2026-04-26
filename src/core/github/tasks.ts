@@ -139,6 +139,17 @@ function getTaskStatusSortRank(status: TaskStatus): number {
   }
 }
 
+function normalizeIsoTimestamp(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
 function requireTaskCardFromItem(
   item: ProjectItemNode,
   projectId: string,
@@ -158,6 +169,7 @@ function requireTaskCardFromItem(
     id: itemId,
     projectId,
     title,
+    updatedAt: normalizeIsoTimestamp(item.updatedAt),
     status,
     priority: parseTaskPriorityValue(getProjectItemTextValue(item, 'Priority')),
     type: parseTaskTypeValue(getProjectItemTextValue(item, 'Type')),
@@ -174,6 +186,7 @@ export function toTaskListItem(task: TaskCard): TaskListItem {
   return {
     id: task.id,
     title: task.title,
+    updatedAt: task.updatedAt,
     status: task.status,
     priority: task.priority,
     type: task.type,

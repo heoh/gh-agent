@@ -146,6 +146,7 @@ describe('session state transitions', () => {
         debounceMs: 60_000,
         promptMailboxSampleLimit: 20,
         promptTaskSampleLimit: 20,
+        promptRecentTaskCardLimit: 5,
         projectId: null,
         projectTitle: null,
         projectUrl: null,
@@ -231,6 +232,7 @@ describe('agent selection and prompt', () => {
         debounceMs: 60_000,
         promptMailboxSampleLimit: 20,
         promptTaskSampleLimit: 20,
+        promptRecentTaskCardLimit: 5,
         projectId: null,
         projectTitle: null,
         projectUrl: null,
@@ -289,15 +291,21 @@ describe('agent selection and prompt', () => {
           shortNote: 'Waiting for review',
         },
       ],
-      mailboxSampleLimit: 5,
-      taskSampleLimit: 7,
-      sessionNotePath: '/tmp/workspace/.gh-agent/session_notes/sess_123.md',
-      recentSessionNotes: [
+      recentUpdatedTaskCards: [
         {
-          sessionId: 'sess_122',
-          content: '# Session sess_122\n\n## What changed\n- Updated docs',
+          id: 'item_2',
+          updatedAt: '2026-04-20T10:00:00.000Z',
+          status: 'doing',
+          executionClass: 'heavy',
+          title: 'Ship migration',
+          sourceLink: 'https://github.com/acme/repo/issues/2',
+          nextAction: 'Resolve review thread',
+          shortNote: 'Blocked by CI',
         },
       ],
+      mailboxSampleLimit: 5,
+      taskSampleLimit: 7,
+      recentTaskCardLimit: 3,
     });
 
     expect(prompt).toContain('mailbox triage -> 2) actionable task 처리');
@@ -310,11 +318,9 @@ describe('agent selection and prompt', () => {
     expect(prompt).toContain('source=https://github.com/acme/repo/pull/1');
     expect(prompt).toContain('next=Open PR with tests');
     expect(prompt).toContain('note=Waiting for review');
-    expect(prompt).toContain('세션 노트 파일을 유지한다');
-    expect(prompt).toContain('What changed');
     expect(prompt).toContain('[mailbox 샘플 최대 5개]');
     expect(prompt).toContain('[actionable task 샘플 최대 7개]');
-    expect(prompt).toContain('[recent session notes 최대 3개]');
-    expect(prompt).toContain('sess_122');
+    expect(prompt).toContain('[recent updated task cards 최대 3개]');
+    expect(prompt).toContain('item_2 | updatedAt=2026-04-20T10:00:00.000Z');
   });
 });

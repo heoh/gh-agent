@@ -31,6 +31,7 @@ export interface Config {
   debounceMs: number;
   promptMailboxSampleLimit: number;
   promptTaskSampleLimit: number;
+  promptRecentTaskCardLimit: number;
   projectId: string | null;
   projectTitle: string | null;
   projectUrl: string | null;
@@ -111,6 +112,7 @@ export interface TaskCard {
   id: string;
   projectId: string;
   title: string;
+  updatedAt: string | null;
   status: TaskStatus;
   priority: TaskPriority | null;
   type: TaskType | null;
@@ -123,6 +125,7 @@ export interface TaskCard {
 export interface TaskListItem {
   id: string;
   title: string;
+  updatedAt?: string | null;
   status: TaskStatus;
   priority: TaskPriority | null;
   type: TaskType | null;

@@ -15,18 +15,17 @@ import {
   resolveAgentExecution,
   selectAgentClass,
   PROMPT_MAILBOX_SAMPLE_LIMIT,
+  PROMPT_RECENT_TASK_CARD_LIMIT,
   PROMPT_TASK_SAMPLE_LIMIT,
   startSession,
 } from '../core/runtime.js';
 import type { GitHubSignalClient } from '../core/types.js';
 import {
   appendWakeDecision,
-  ensureSessionNoteTemplate,
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
   getWorkspacePaths,
-  listRecentSessionNotes,
   saveSessionState,
 } from '../core/workspace.js';
 
@@ -70,6 +69,74 @@ function normalizePromptSampleLimit(value: number, fallback: number): number {
   }
 
   return Math.floor(value);
+}
+
+function parseIsoDate(value: string | null | undefined): Date | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp;
+}
+
+function selectRecentUpdatedTaskCards(
+  tasks: Array<{
+    id: string;
+    updatedAt?: string | null;
+    status: string;
+    executionClass: string | null;
+    title: string;
+    sourceLink: string | null;
+    nextAction?: string | null;
+    shortNote?: string | null;
+  }>,
+  limit: number,
+): Array<{
+  id: string;
+  updatedAt: string | null;
+  status: string;
+  executionClass: string | null;
+  title: string;
+  sourceLink: string | null;
+  nextAction: string | null;
+  shortNote: string | null;
+}> {
+  return [...tasks]
+    .sort((left, right) => {
+      const leftDate = parseIsoDate(left.updatedAt);
+      const rightDate = parseIsoDate(right.updatedAt);
+
+      if (leftDate !== null && rightDate !== null) {
+        const timeDiff = rightDate.getTime() - leftDate.getTime();
+
+        if (timeDiff !== 0) {
+          return timeDiff;
+        }
+      } else if (leftDate !== null) {
+        return -1;
+      } else if (rightDate !== null) {
+        return 1;
+      }
+
+      const titleDiff = left.title.localeCompare(right.title);
+      if (titleDiff !== 0) {
+        return titleDiff;
+      }
+
+      return left.id.localeCompare(right.id);
+    })
+    .slice(0, limit)
+    .map((task) => ({
+      id: task.id,
+      updatedAt: task.updatedAt ?? null,
+      status: task.status,
+      executionClass: task.executionClass,
+      title: task.title,
+      sourceLink: task.sourceLink,
+      nextAction: task.nextAction ?? null,
+      shortNote: task.shortNote ?? null,
+    }));
 }
 
 export async function runCommand(
@@ -178,15 +245,22 @@ export async function runCommand(
           config.promptTaskSampleLimit,
           PROMPT_TASK_SAMPLE_LIMIT,
         );
+        const recentTaskCardLimit = normalizePromptSampleLimit(
+          config.promptRecentTaskCardLimit,
+          PROMPT_RECENT_TASK_CARD_LIMIT,
+        );
         const mailboxSamples = await githubClient.listMailboxNotifications(
           paths,
           { limit: mailboxSampleLimit },
         );
-        const recentSessionNotes = await listRecentSessionNotes(paths, 3);
-        const sessionNotePath = await ensureSessionNoteTemplate(
+        const allTaskCards = await githubClient.listTaskCards(
           paths,
-          sessionId,
-          sessionStartAt,
+          config,
+          {},
+        );
+        const recentUpdatedTaskCards = selectRecentUpdatedTaskCards(
+          allTaskCards,
+          recentTaskCardLimit,
         );
 
         const prompt = buildRichSessionPrompt({
@@ -214,10 +288,10 @@ export async function runCommand(
               nextAction: task.nextAction ?? null,
               shortNote: task.shortNote ?? null,
             })),
+          recentUpdatedTaskCards,
           mailboxSampleLimit,
           taskSampleLimit,
-          sessionNotePath,
-          recentSessionNotes,
+          recentTaskCardLimit,
         });
 
         state = startSession(state, sessionId, sessionStartAt);

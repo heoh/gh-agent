@@ -44,6 +44,7 @@ function createConfig(): Config {
     debounceMs: 60_000,
     promptMailboxSampleLimit: 20,
     promptTaskSampleLimit: 20,
+    promptRecentTaskCardLimit: 5,
     projectId: 'proj_123',
     projectTitle: 'gh-agent',
     projectUrl: 'https://github.com/users/test/projects/1',
@@ -760,6 +761,7 @@ describe('GitHub mailbox mutations', () => {
       {
         id: 'item_ready',
         title: 'Active task',
+        updatedAt: null,
         status: 'ready',
         priority: 'P1',
         type: 'execution',
@@ -839,6 +841,7 @@ describe('GitHub mailbox mutations', () => {
       id: 'item_123',
       projectId: 'proj_123',
       title: 'Implement task update',
+      updatedAt: null,
       status: 'doing',
       priority: 'P1',
       type: 'execution',

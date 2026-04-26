@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -55,6 +55,10 @@ function createTaskFixture(taskId: string) {
     projectId: 'proj_123',
     title:
       taskId === 'item_2' ? 'Triage docs cleanup' : 'Add mailbox list command',
+    updatedAt:
+      taskId === 'item_2'
+        ? '2026-04-21T10:00:00.000Z'
+        : '2026-04-20T10:00:00.000Z',
     status: taskId === 'item_2' ? ('waiting' as const) : ('ready' as const),
     priority: taskId === 'item_2' ? ('P3' as const) : ('P1' as const),
     type:
@@ -236,6 +240,7 @@ function createGitHubClientStub(
         id: 'item_created',
         projectId: config.projectId as string,
         title: input.title,
+        updatedAt: null,
         status: input.status,
         priority: input.priority ?? null,
         type: input.type ?? null,
@@ -336,6 +341,7 @@ describe('commands', () => {
     );
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
+    expect(config.promptRecentTaskCardLimit).toBe(5);
     expect(state.currentMode).toBe('sleeping');
     expect(gitConfig).toContain('[user]');
     expect(gitConfig).toContain('name = Test User');
@@ -511,7 +517,7 @@ describe('commands', () => {
     expect(logs).toContain('Session ended');
   });
 
-  it('runCommand creates session notes and injects recent notes into the next prompt', async () => {
+  it('runCommand injects recent updated task cards into prompt context', async () => {
     const prompts: string[] = [];
 
     await initCommand({
@@ -529,6 +535,7 @@ describe('commands', () => {
         debounceMs: 0,
         promptMailboxSampleLimit: 1,
         promptTaskSampleLimit: 1,
+        promptRecentTaskCardLimit: 1,
       }),
       'utf8',
     );
@@ -538,51 +545,16 @@ describe('commands', () => {
       maxPollCycles: 1,
       async executeAgentSession(input) {
         prompts.push(input.prompt);
-        const sessionIdMatch = input.prompt.match(/- sessionId: (sess_\d+)/u);
-        expect(sessionIdMatch).not.toBeNull();
-
-        const sessionId = sessionIdMatch?.[1] as string;
-        const sessionNotePath = `${paths.sessionNotesDir}/${sessionId}.md`;
-        await writeFile(
-          sessionNotePath,
-          [
-            `# Session ${sessionId}`,
-            '',
-            '## What changed',
-            '- Added first pass triage summary',
-            '',
-            '## What is blocked',
-            '- Waiting for reviewer answer',
-            '',
-            '## Next action',
-            '- Follow up tomorrow',
-            '',
-          ].join('\n'),
-          'utf8',
-        );
-
         return 0;
       },
     });
 
-    const noteFiles = await readdir(paths.sessionNotesDir);
-    expect(noteFiles.length).toBeGreaterThan(0);
-
-    await runCommand({
-      githubClient: createGitHubClientStub(1, 1),
-      maxPollCycles: 1,
-      async executeAgentSession(input) {
-        prompts.push(input.prompt);
-        return 0;
-      },
-    });
-
-    expect(prompts).toHaveLength(2);
+    expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('[mailbox 샘플 최대 1개]');
     expect(prompts[0]).toContain('[actionable task 샘플 최대 1개]');
-    expect(prompts[1]).toContain('[recent session notes 최대 3개]');
-    expect(prompts[1]).toContain('Added first pass triage summary');
-    expect(prompts[1]).toContain('세션 노트 파일을 유지한다');
+    expect(prompts[0]).toContain('[recent updated task cards 최대 1개]');
+    expect(prompts[0]).toContain('item_2 | updatedAt=2026-04-21T10:00:00.000Z');
+    expect(prompts[0]).not.toContain('[recent session notes');
   });
 
   it('mailboxListCommand prints JSON with one object per line by default', async () => {
@@ -878,6 +850,7 @@ describe('commands', () => {
       {
         id: 'item_1',
         title: 'Add mailbox list command',
+        updatedAt: '2026-04-20T10:00:00.000Z',
         status: 'ready',
         priority: 'P1',
         type: 'execution',
@@ -889,6 +862,7 @@ describe('commands', () => {
       {
         id: 'item_2',
         title: 'Triage docs cleanup',
+        updatedAt: '2026-04-21T10:00:00.000Z',
         status: 'waiting',
         priority: 'P3',
         type: 'interaction',
@@ -920,6 +894,7 @@ describe('commands', () => {
       {
         id: 'item_2',
         title: 'Triage docs cleanup',
+        updatedAt: '2026-04-21T10:00:00.000Z',
         status: 'waiting',
         priority: 'P3',
         type: 'interaction',
@@ -949,6 +924,7 @@ describe('commands', () => {
   "id": "item_1",
   "projectId": "proj_123",
   "title": "Add mailbox list command",
+  "updatedAt": "2026-04-20T10:00:00.000Z",
   "status": "ready",
   "priority": "P1",
   "type": "execution",
@@ -983,6 +959,7 @@ describe('commands', () => {
   "id": "item_created",
   "projectId": "proj_123",
   "title": "Ship task commands",
+  "updatedAt": null,
   "status": "doing",
   "priority": "P1",
   "type": "execution",
@@ -1012,6 +989,7 @@ describe('commands', () => {
       id: 'item_1',
       projectId: 'proj_123',
       title: 'Add mailbox list command',
+      updatedAt: '2026-04-20T10:00:00.000Z',
       status: 'doing',
       priority: 'P1',
       type: 'execution',
@@ -1064,7 +1042,7 @@ describe('commands', () => {
     });
 
     expect(logs).toContain(`[
-  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","executionClass":"light","sourceLink":"https://github.com/acme/widgets/pull/1","nextAction":"Implement the task command set","shortNote":"High-priority execution task"}},
+  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","updatedAt":"2026-04-20T10:00:00.000Z","status":"done","priority":"P1","type":"execution","executionClass":"light","sourceLink":"https://github.com/acme/widgets/pull/1","nextAction":"Implement the task command set","shortNote":"High-priority execution task"}},
   {"taskId":"item_2","status":"done","ok":false,"error":"status update failed for item_2","errorCategory":"runtime"}
 ]`);
   });
@@ -1104,6 +1082,7 @@ describe('commands', () => {
           task: {
             id: 'item_1',
             title: 'Add mailbox list command',
+            updatedAt: '2026-04-20T10:00:00.000Z',
             status: 'ready',
             priority: 'P1',
             type: 'execution',
@@ -1122,6 +1101,7 @@ describe('commands', () => {
           task: {
             id: 'item_1',
             title: 'Add mailbox list command',
+            updatedAt: '2026-04-20T10:00:00.000Z',
             status: 'waiting',
             priority: 'P1',
             type: 'execution',
@@ -1140,6 +1120,7 @@ describe('commands', () => {
           task: {
             id: 'item_1',
             title: 'Add mailbox list command',
+            updatedAt: '2026-04-20T10:00:00.000Z',
             status: 'doing',
             priority: 'P1',
             type: 'execution',

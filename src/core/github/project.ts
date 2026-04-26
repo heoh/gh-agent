@@ -564,6 +564,7 @@ export async function fetchProjectById(
           items(first: 100) {
             nodes {
               id
+              updatedAt
               content {
                 ... on DraftIssue {
                   __typename

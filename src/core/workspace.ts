@@ -77,6 +77,7 @@ export const DEFAULT_CONFIG: Config = {
   debounceMs: 60_000,
   promptMailboxSampleLimit: 20,
   promptTaskSampleLimit: 20,
+  promptRecentTaskCardLimit: 5,
   projectId: null,
   projectTitle: null,
   projectUrl: null,
@@ -198,6 +199,12 @@ function normalizeConfig(raw: unknown): Config {
       record.promptTaskSampleLimit > 0
         ? Math.floor(record.promptTaskSampleLimit)
         : DEFAULT_CONFIG.promptTaskSampleLimit,
+    promptRecentTaskCardLimit:
+      typeof record.promptRecentTaskCardLimit === 'number' &&
+      Number.isFinite(record.promptRecentTaskCardLimit) &&
+      record.promptRecentTaskCardLimit > 0
+        ? Math.floor(record.promptRecentTaskCardLimit)
+        : DEFAULT_CONFIG.promptRecentTaskCardLimit,
     projectId: typeof record.projectId === 'string' ? record.projectId : null,
     projectTitle:
       typeof record.projectTitle === 'string' ? record.projectTitle : null,

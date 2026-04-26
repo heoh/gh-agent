@@ -94,6 +94,7 @@ export interface ProjectNode {
 
 export interface ProjectItemNode {
   id?: string;
+  updatedAt?: string | null;
   content?: {
     __typename?: string | null;
     title?: string | null;

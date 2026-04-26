@@ -137,6 +137,7 @@ export function toTaskListItem(task: TaskCard): TaskListItem {
   return {
     id: task.id,
     title: task.title,
+    updatedAt: task.updatedAt,
     status: task.status,
     priority: task.priority,
     type: task.type,
