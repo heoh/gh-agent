@@ -64,10 +64,7 @@ function createSessionEnvironment(input: {
   };
 }
 
-function normalizePromptSampleLimit(
-  value: number,
-  fallback: number,
-): number {
+function normalizePromptSampleLimit(value: number, fallback: number): number {
   if (!Number.isFinite(value) || value <= 0) {
     return fallback;
   }

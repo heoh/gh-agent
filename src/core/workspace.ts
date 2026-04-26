@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
+import { DEFAULT_AGENTS_MD } from './default-agents-md.js';
 import type {
   Config,
   GitIdentity,
@@ -21,6 +22,7 @@ import type {
 
 export interface WorkspacePaths {
   root: string;
+  agentsFile: string;
   configFile: string;
   stateDir: string;
   stateFile: string;
@@ -64,7 +66,8 @@ function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptio
 
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
-  defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+  defaultAgentCommand:
+    'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
   heavyAgentCommand: null,
   pollIntervalMs: 30_000,
   debounceMs: 60_000,
@@ -83,6 +86,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
 
   return {
     root,
+    agentsFile: path.join(root, 'AGENTS.md'),
     configFile: path.join(stateDir, 'config.json'),
     stateDir,
     stateFile: path.join(stateDir, 'session_state.json'),
@@ -323,6 +327,17 @@ export async function ensureWorkspaceStructure(
   await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
 }
 
+export async function ensureAgentsGuide(
+  paths: Pick<WorkspacePaths, 'agentsFile'>,
+): Promise<{ created: boolean }> {
+  if (await pathExists(paths.agentsFile)) {
+    return { created: false };
+  }
+
+  await writeFile(paths.agentsFile, DEFAULT_AGENTS_MD, 'utf8');
+  return { created: true };
+}
+
 export async function writeJsonAtomic(
   filePath: string,
   value: unknown,
@@ -494,10 +509,9 @@ export async function listRecentSessionNotes(
   const notes = await Promise.all(
     selectedFiles.map(async (fileName) => {
       const sessionId = fileName.replace(/\.md$/u, '');
-      const content = (await readFile(
-        path.join(paths.sessionNotesDir, fileName),
-        'utf8',
-      )).trim();
+      const content = (
+        await readFile(path.join(paths.sessionNotesDir, fileName), 'utf8')
+      ).trim();
 
       return {
         sessionId,

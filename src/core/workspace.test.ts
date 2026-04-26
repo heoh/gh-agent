@@ -7,6 +7,7 @@ import { setupWorkspaceTest } from '../test/test-helpers.js';
 import {
   createInitialSessionState,
   ensureConfig,
+  ensureAgentsGuide,
   ensureSessionNoteTemplate,
   ensureSessionState,
   ensureWorkspaceStructure,
@@ -31,7 +32,8 @@ describe('workspace normalization', () => {
     );
     expect(config).toEqual({
       agentId: 'gh-agent',
-      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      defaultAgentCommand:
+        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -93,7 +95,8 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'custom-agent',
-      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      defaultAgentCommand:
+        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -133,7 +136,8 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'gh-agent',
-      defaultAgentCommand: 'codex exec --full-auto "$prompt"',
+      defaultAgentCommand:
+        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -253,6 +257,23 @@ describe('workspace normalization', () => {
       'sess_1003',
       'sess_1002',
     ]);
+  });
+
+  it('creates AGENTS.md once and keeps existing content afterwards', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await ensureWorkspaceStructure(paths);
+
+    const first = await ensureAgentsGuide(paths);
+    const firstContent = await readFile(paths.agentsFile, 'utf8');
+    expect(first.created).toBe(true);
+    expect(firstContent).toContain('# AGENTS.md');
+    expect(firstContent).toContain('## 기본 역할');
+
+    await writeFile(paths.agentsFile, 'custom-agents', 'utf8');
+    const second = await ensureAgentsGuide(paths);
+    const secondContent = await readFile(paths.agentsFile, 'utf8');
+    expect(second.created).toBe(false);
+    expect(secondContent).toBe('custom-agents');
   });
 
   it('finds the workspace root from the workspace root itself', async () => {

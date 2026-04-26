@@ -1,4 +1,5 @@
 import {
+  ensureAgentsGuide,
   saveConfig,
   ensureConfig,
   ensureSessionState,
@@ -38,6 +39,7 @@ export async function initCommand(
 
   const hadState = await pathExists(paths.stateFile);
   await ensureSessionState(paths, config.agentId);
+  const agentsGuide = await ensureAgentsGuide(paths);
 
   try {
     let authStatus = await githubClient.getAuthStatus(paths);
@@ -95,6 +97,9 @@ export async function initCommand(
     );
     console.log(
       'Directories: work/, .gh-agent/, and .gh-agent/gh-config/ ensured',
+    );
+    console.log(
+      `AGENTS.md: ${agentsGuide.created ? 'created' : 'existing file kept'}`,
     );
     console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
     console.log(`Git identity: ${gitIdentity.name} <${gitIdentity.email}>`);

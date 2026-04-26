@@ -331,6 +331,9 @@ describe('commands', () => {
     const gitConfig = await readFile(paths.gitConfigGlobalFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
+    expect(config.defaultAgentCommand).toBe(
+      'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
+    );
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
     expect(state.currentMode).toBe('sleeping');
@@ -342,11 +345,15 @@ describe('commands', () => {
     expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
+    expect(logs).toContain('AGENTS.md: created');
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
       'Project schema: Status and Execution Class are single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
     );
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
+    const agentsFile = await readFile(paths.agentsFile, 'utf8');
+    expect(agentsFile).toContain('# AGENTS.md');
+    expect(agentsFile).toContain('## 기본 역할');
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
@@ -424,9 +431,7 @@ describe('commands', () => {
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
-    expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(
-      paths.gitConfigGlobalFile,
-    );
+    expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);
     expect(await readLockInfo(paths.lockFile)).toBeNull();
     expect(logs.some((line) => line.startsWith('Session started: sess_'))).toBe(
       true,

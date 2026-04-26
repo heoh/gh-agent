@@ -16,7 +16,9 @@ export interface GhAuthClient {
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   ): Promise<GitHubAuthStatus>;
   getToken(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<string>;
-  getGitIdentity(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<GitIdentity>;
+  getGitIdentity(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  ): Promise<GitIdentity>;
 }
 
 export interface GitHubApiClient {
