@@ -21,10 +21,12 @@ import {
 import type { GitHubSignalClient } from '../core/types.js';
 import {
   appendWakeDecision,
+  ensureSessionNoteTemplate,
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
   getWorkspacePaths,
+  listRecentSessionNotes,
   saveSessionState,
 } from '../core/workspace.js';
 
@@ -60,6 +62,17 @@ function createSessionEnvironment(input: {
     GH_CONFIG_DIR: input.ghConfigDir,
     GIT_CONFIG_GLOBAL: input.gitConfigGlobalFile,
   };
+}
+
+function normalizePromptSampleLimit(
+  value: number,
+  fallback: number,
+): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
 }
 
 export async function runCommand(
@@ -158,13 +171,26 @@ export async function runCommand(
         console.log(`Selected agent: ${selectedAgentClass}`);
         console.log(`Executing agent command class: ${executedAgentClass}`);
 
-        const mailboxSamples = await githubClient.listMailboxNotifications(
-          paths,
-          { limit: PROMPT_MAILBOX_SAMPLE_LIMIT },
-        );
-
         const sessionStartAt = new Date();
         const sessionId = createSessionId(sessionStartAt);
+        const mailboxSampleLimit = normalizePromptSampleLimit(
+          config.promptMailboxSampleLimit,
+          PROMPT_MAILBOX_SAMPLE_LIMIT,
+        );
+        const taskSampleLimit = normalizePromptSampleLimit(
+          config.promptTaskSampleLimit,
+          PROMPT_TASK_SAMPLE_LIMIT,
+        );
+        const mailboxSamples = await githubClient.listMailboxNotifications(
+          paths,
+          { limit: mailboxSampleLimit },
+        );
+        const recentSessionNotes = await listRecentSessionNotes(paths, 3);
+        const sessionNotePath = await ensureSessionNoteTemplate(
+          paths,
+          sessionId,
+          sessionStartAt,
+        );
 
         const prompt = buildRichSessionPrompt({
           sessionId,
@@ -181,13 +207,20 @@ export async function runCommand(
             reason: sample.reason,
           })),
           actionableTaskSamples: actionableTasks
-            .slice(0, PROMPT_TASK_SAMPLE_LIMIT)
+            .slice(0, taskSampleLimit)
             .map((task) => ({
               id: task.id,
               status: task.status,
               executionClass: task.executionClass,
               title: task.title,
+              sourceLink: task.sourceLink,
+              nextAction: task.nextAction ?? null,
+              shortNote: task.shortNote ?? null,
             })),
+          mailboxSampleLimit,
+          taskSampleLimit,
+          sessionNotePath,
+          recentSessionNotes,
         });
 
         state = startSession(state, sessionId, sessionStartAt);

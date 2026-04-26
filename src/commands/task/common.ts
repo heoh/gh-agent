@@ -142,6 +142,8 @@ export function toTaskListItem(task: TaskCard): TaskListItem {
     type: task.type,
     executionClass: task.executionClass,
     sourceLink: task.sourceLink,
+    nextAction: task.nextAction,
+    shortNote: task.shortNote,
   };
 }
 

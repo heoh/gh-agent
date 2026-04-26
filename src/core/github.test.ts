@@ -42,6 +42,8 @@ function createConfig(): Config {
     heavyAgentCommand: null,
     pollIntervalMs: 30_000,
     debounceMs: 60_000,
+    promptMailboxSampleLimit: 20,
+    promptTaskSampleLimit: 20,
     projectId: 'proj_123',
     projectTitle: 'gh-agent',
     projectUrl: 'https://github.com/users/test/projects/1',
@@ -763,6 +765,8 @@ describe('GitHub mailbox mutations', () => {
         type: 'execution',
         executionClass: 'light',
         sourceLink: 'https://github.com/acme/widgets/pull/1',
+        nextAction: null,
+        shortNote: null,
       },
     ]);
   });

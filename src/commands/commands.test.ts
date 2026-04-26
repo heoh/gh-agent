@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -216,14 +216,7 @@ function createGitHubClientStub(
 
           return true;
         })
-        .map(
-          ({
-            projectId: _projectId,
-            nextAction: _nextAction,
-            shortNote: _shortNote,
-            ...task
-          }) => task,
-        );
+        .map(({ projectId: _projectId, ...task }) => task);
     },
     async getTaskCard(_paths, config, taskId) {
       expect(config.projectId).toBe('proj_123');
@@ -511,6 +504,80 @@ describe('commands', () => {
       true,
     );
     expect(logs).toContain('Session ended');
+  });
+
+  it('runCommand creates session notes and injects recent notes into the next prompt', async () => {
+    const prompts: string[] = [];
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        ...(JSON.parse(await readFile(paths.configFile, 'utf8')) as Record<
+          string,
+          unknown
+        >),
+        debounceMs: 0,
+        promptMailboxSampleLimit: 1,
+        promptTaskSampleLimit: 1,
+      }),
+      'utf8',
+    );
+
+    await runCommand({
+      githubClient: createGitHubClientStub(1, 1),
+      maxPollCycles: 1,
+      async executeAgentSession(input) {
+        prompts.push(input.prompt);
+        const sessionIdMatch = input.prompt.match(/- sessionId: (sess_\d+)/u);
+        expect(sessionIdMatch).not.toBeNull();
+
+        const sessionId = sessionIdMatch?.[1] as string;
+        const sessionNotePath = `${paths.sessionNotesDir}/${sessionId}.md`;
+        await writeFile(
+          sessionNotePath,
+          [
+            `# Session ${sessionId}`,
+            '',
+            '## What changed',
+            '- Added first pass triage summary',
+            '',
+            '## What is blocked',
+            '- Waiting for reviewer answer',
+            '',
+            '## Next action',
+            '- Follow up tomorrow',
+            '',
+          ].join('\n'),
+          'utf8',
+        );
+
+        return 0;
+      },
+    });
+
+    const noteFiles = await readdir(paths.sessionNotesDir);
+    expect(noteFiles.length).toBeGreaterThan(0);
+
+    await runCommand({
+      githubClient: createGitHubClientStub(1, 1),
+      maxPollCycles: 1,
+      async executeAgentSession(input) {
+        prompts.push(input.prompt);
+        return 0;
+      },
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('[mailbox 샘플 최대 1개]');
+    expect(prompts[0]).toContain('[actionable task 샘플 최대 1개]');
+    expect(prompts[1]).toContain('[recent session notes 최대 3개]');
+    expect(prompts[1]).toContain('Added first pass triage summary');
+    expect(prompts[1]).toContain('세션 노트 파일을 유지한다');
   });
 
   it('mailboxListCommand prints JSON with one object per line by default', async () => {
@@ -811,6 +878,8 @@ describe('commands', () => {
         type: 'execution',
         executionClass: 'light',
         sourceLink: 'https://github.com/acme/widgets/pull/1',
+        nextAction: 'Implement the task command set',
+        shortNote: 'High-priority execution task',
       },
       {
         id: 'item_2',
@@ -820,6 +889,8 @@ describe('commands', () => {
         type: 'interaction',
         executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/docs/issues/2',
+        nextAction: 'Reply after docs review',
+        shortNote: 'Waiting on reviewer feedback',
       },
     ]);
   });
@@ -849,6 +920,8 @@ describe('commands', () => {
         type: 'interaction',
         executionClass: 'heavy',
         sourceLink: 'https://github.com/acme/docs/issues/2',
+        nextAction: 'Reply after docs review',
+        shortNote: 'Waiting on reviewer feedback',
       },
     ]);
   });
@@ -986,7 +1059,7 @@ describe('commands', () => {
     });
 
     expect(logs).toContain(`[
-  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","executionClass":"light","sourceLink":"https://github.com/acme/widgets/pull/1"}},
+  {"taskId":"item_1","status":"done","ok":true,"task":{"id":"item_1","title":"Add mailbox list command","status":"done","priority":"P1","type":"execution","executionClass":"light","sourceLink":"https://github.com/acme/widgets/pull/1","nextAction":"Implement the task command set","shortNote":"High-priority execution task"}},
   {"taskId":"item_2","status":"done","ok":false,"error":"status update failed for item_2","errorCategory":"runtime"}
 ]`);
   });
@@ -1031,6 +1104,8 @@ describe('commands', () => {
             type: 'execution',
             executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
+            nextAction: 'Implement the task command set',
+            shortNote: 'High-priority execution task',
           },
         },
       ],
@@ -1047,6 +1122,8 @@ describe('commands', () => {
             type: 'execution',
             executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
+            nextAction: 'Implement the task command set',
+            shortNote: 'High-priority execution task',
           },
         },
       ],
@@ -1063,6 +1140,8 @@ describe('commands', () => {
             type: 'execution',
             executionClass: 'light',
             sourceLink: 'https://github.com/acme/widgets/pull/1',
+            nextAction: 'Implement the task command set',
+            shortNote: 'High-priority execution task',
           },
         },
       ],

@@ -1,6 +1,7 @@
 import {
   appendFile,
   mkdir,
+  readdir,
   readFile,
   rename,
   rm,
@@ -23,6 +24,7 @@ export interface WorkspacePaths {
   configFile: string;
   stateDir: string;
   stateFile: string;
+  sessionNotesDir: string;
   lockFile: string;
   wakeDecisionsFile: string;
   ghConfigDir: string;
@@ -66,6 +68,8 @@ export const DEFAULT_CONFIG: Config = {
   heavyAgentCommand: null,
   pollIntervalMs: 30_000,
   debounceMs: 60_000,
+  promptMailboxSampleLimit: 20,
+  promptTaskSampleLimit: 20,
   projectId: null,
   projectTitle: null,
   projectUrl: null,
@@ -82,6 +86,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
     configFile: path.join(stateDir, 'config.json'),
     stateDir,
     stateFile: path.join(stateDir, 'session_state.json'),
+    sessionNotesDir: path.join(stateDir, 'session_notes'),
     lockFile: path.join(stateDir, 'lock'),
     wakeDecisionsFile: path.join(stateDir, 'wake_decisions.jsonl'),
     ghConfigDir: path.join(stateDir, 'gh-config'),
@@ -173,6 +178,18 @@ function normalizeConfig(raw: unknown): Config {
       record.debounceMs >= 0
         ? record.debounceMs
         : DEFAULT_CONFIG.debounceMs,
+    promptMailboxSampleLimit:
+      typeof record.promptMailboxSampleLimit === 'number' &&
+      Number.isFinite(record.promptMailboxSampleLimit) &&
+      record.promptMailboxSampleLimit > 0
+        ? Math.floor(record.promptMailboxSampleLimit)
+        : DEFAULT_CONFIG.promptMailboxSampleLimit,
+    promptTaskSampleLimit:
+      typeof record.promptTaskSampleLimit === 'number' &&
+      Number.isFinite(record.promptTaskSampleLimit) &&
+      record.promptTaskSampleLimit > 0
+        ? Math.floor(record.promptTaskSampleLimit)
+        : DEFAULT_CONFIG.promptTaskSampleLimit,
     projectId: typeof record.projectId === 'string' ? record.projectId : null,
     projectTitle:
       typeof record.projectTitle === 'string' ? record.projectTitle : null,
@@ -301,6 +318,7 @@ export async function ensureWorkspaceStructure(
 ): Promise<void> {
   await mkdir(paths.workDir, { recursive: true });
   await mkdir(paths.stateDir, { recursive: true });
+  await mkdir(paths.sessionNotesDir, { recursive: true });
   await mkdir(paths.ghConfigDir, { recursive: true });
   await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
 }
@@ -403,6 +421,92 @@ export async function appendWakeDecision(
     `${JSON.stringify(decision)}\n`,
     'utf8',
   );
+}
+
+function parseSessionNoteTimestamp(fileName: string): number | null {
+  const match = /^sess_(\d+)\.md$/u.exec(fileName);
+
+  if (match === null) {
+    return null;
+  }
+
+  const timestamp = Number.parseInt(match[1], 10);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+export function getSessionNoteFilePath(
+  paths: Pick<WorkspacePaths, 'sessionNotesDir'>,
+  sessionId: string,
+): string {
+  return path.join(paths.sessionNotesDir, `${sessionId}.md`);
+}
+
+export async function ensureSessionNoteTemplate(
+  paths: Pick<WorkspacePaths, 'sessionNotesDir'>,
+  sessionId: string,
+  sessionStartedAt = new Date(),
+): Promise<string> {
+  const noteFilePath = getSessionNoteFilePath(paths, sessionId);
+  const template = [
+    `# Session ${sessionId}`,
+    '',
+    `Started at: ${sessionStartedAt.toISOString()}`,
+    '',
+    '## What changed',
+    '- TODO',
+    '',
+    '## What is blocked',
+    '- TODO',
+    '',
+    '## Next action',
+    '- TODO',
+    '',
+  ].join('\n');
+
+  await writeFile(noteFilePath, template, 'utf8');
+  return noteFilePath;
+}
+
+export async function listRecentSessionNotes(
+  paths: Pick<WorkspacePaths, 'sessionNotesDir'>,
+  limit = 3,
+): Promise<Array<{ sessionId: string; content: string }>> {
+  const entries = await readdir(paths.sessionNotesDir, {
+    withFileTypes: true,
+  });
+  const markdownFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .map((entry) => entry.name)
+    .sort((left, right) => {
+      const leftTimestamp = parseSessionNoteTimestamp(left);
+      const rightTimestamp = parseSessionNoteTimestamp(right);
+
+      if (leftTimestamp !== null && rightTimestamp !== null) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      return right.localeCompare(left);
+    });
+
+  const normalizedLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 3;
+  const selectedFiles = markdownFiles.slice(0, normalizedLimit);
+  const notes = await Promise.all(
+    selectedFiles.map(async (fileName) => {
+      const sessionId = fileName.replace(/\.md$/u, '');
+      const content = (await readFile(
+        path.join(paths.sessionNotesDir, fileName),
+        'utf8',
+      )).trim();
+
+      return {
+        sessionId,
+        content,
+      };
+    }),
+  );
+
+  return notes.filter((note) => note.content.length > 0);
 }
 
 export async function removeFileIfExists(filePath: string): Promise<void> {

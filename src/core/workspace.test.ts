@@ -7,10 +7,12 @@ import { setupWorkspaceTest } from '../test/test-helpers.js';
 import {
   createInitialSessionState,
   ensureConfig,
+  ensureSessionNoteTemplate,
   ensureSessionState,
   ensureWorkspaceStructure,
   findWorkspaceRoot,
   getWorkspacePaths,
+  listRecentSessionNotes,
   WorkspaceNotFoundError,
 } from './workspace.js';
 
@@ -33,6 +35,8 @@ describe('workspace normalization', () => {
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      promptMailboxSampleLimit: 20,
+      promptTaskSampleLimit: 20,
       projectId: null,
       projectTitle: null,
       projectUrl: null,
@@ -79,6 +83,8 @@ describe('workspace normalization', () => {
         heavyAgentCommand: 123,
         pollIntervalMs: -1,
         debounceMs: 'invalid',
+        promptMailboxSampleLimit: 0,
+        promptTaskSampleLimit: 'invalid',
       }),
       'utf8',
     );
@@ -91,6 +97,8 @@ describe('workspace normalization', () => {
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      promptMailboxSampleLimit: 20,
+      promptTaskSampleLimit: 20,
       projectId: null,
       projectTitle: null,
       projectUrl: null,
@@ -129,6 +137,8 @@ describe('workspace normalization', () => {
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
+      promptMailboxSampleLimit: 20,
+      promptTaskSampleLimit: 20,
       projectId: null,
       projectTitle: null,
       projectUrl: null,
@@ -214,6 +224,35 @@ describe('workspace normalization', () => {
     const state = await ensureSessionState(paths, 'gh-agent');
 
     expect(state).toEqual(createInitialSessionState('gh-agent'));
+  });
+
+  it('returns only the most recent three session notes by default', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await ensureWorkspaceStructure(paths);
+
+    for (const sessionId of [
+      'sess_1000',
+      'sess_1001',
+      'sess_1002',
+      'sess_1003',
+      'sess_1004',
+    ]) {
+      const notePath = await ensureSessionNoteTemplate(paths, sessionId);
+      await writeFile(
+        notePath,
+        `# Session ${sessionId}\n\n## What changed\n- ${sessionId}\n`,
+        'utf8',
+      );
+    }
+
+    const notes = await listRecentSessionNotes(paths);
+
+    expect(notes).toHaveLength(3);
+    expect(notes.map((note) => note.sessionId)).toEqual([
+      'sess_1004',
+      'sess_1003',
+      'sess_1002',
+    ]);
   });
 
   it('finds the workspace root from the workspace root itself', async () => {

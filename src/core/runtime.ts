@@ -9,6 +9,7 @@ import type {
 
 export const PROMPT_MAILBOX_SAMPLE_LIMIT = 20;
 export const PROMPT_TASK_SAMPLE_LIMIT = 20;
+export const PROMPT_RECENT_SESSION_NOTE_LIMIT = 3;
 
 function parseIsoDate(value: string | null): Date | null {
   if (value === null) {
@@ -178,6 +179,9 @@ function formatTaskSamples(
     status: string;
     executionClass: string | null;
     title: string;
+    sourceLink: string | null;
+    nextAction: string | null;
+    shortNote: string | null;
   }>,
 ): string {
   if (samples.length === 0) {
@@ -187,8 +191,32 @@ function formatTaskSamples(
   return samples
     .map(
       (sample) =>
-        `- ${sample.id} | ${sample.status} | class=${sample.executionClass ?? 'null'} | ${sample.title}`,
+        `- ${sample.id} | ${sample.status} | class=${sample.executionClass ?? 'null'} | ${sample.title} | source=${sample.sourceLink ?? 'null'} | next=${sample.nextAction ?? 'null'} | note=${sample.shortNote ?? 'null'}`,
     )
+    .join('\n');
+}
+
+function formatRecentSessionNotes(
+  notes: Array<{
+    sessionId: string;
+    content: string;
+  }>,
+): string {
+  if (notes.length === 0) {
+    return '- 없음';
+  }
+
+  return notes
+    .map((note) => {
+      const compactContent =
+        note.content.length > 800
+          ? `${note.content.slice(0, 800)}...`
+          : note.content;
+
+      return [`- ${note.sessionId}`, '```markdown', compactContent, '```'].join(
+        '\n',
+      );
+    })
     .join('\n');
 }
 
@@ -211,6 +239,16 @@ export function buildRichSessionPrompt(input: {
     status: string;
     executionClass: string | null;
     title: string;
+    sourceLink: string | null;
+    nextAction: string | null;
+    shortNote: string | null;
+  }>;
+  mailboxSampleLimit: number;
+  taskSampleLimit: number;
+  sessionNotePath: string;
+  recentSessionNotes: Array<{
+    sessionId: string;
+    content: string;
   }>;
 }): string {
   return [
@@ -232,6 +270,11 @@ export function buildRichSessionPrompt(input: {
     '- 현재 workspace 안에서 자율적으로 행동한다.',
     '- 필요하면 repo clone, 브랜치 생성, 검증을 직접 수행한다.',
     '- work/ 포함 로컬 파일시스템을 실행 공간으로 적극 활용한다.',
+    `- 세션 노트 파일을 유지한다: ${input.sessionNotePath}`,
+    '- 세션 종료 전 아래 템플릿을 세션 노트에 채운다.',
+    '  - What changed',
+    '  - What is blocked',
+    '  - Next action',
     '',
     '[현재 세션 컨텍스트]',
     `- sessionId: ${input.sessionId}`,
@@ -242,11 +285,14 @@ export function buildRichSessionPrompt(input: {
     `- unreadCount: ${input.unreadCount}`,
     `- actionableCount: ${input.actionableCount}`,
     '',
-    `[mailbox 샘플 최대 ${PROMPT_MAILBOX_SAMPLE_LIMIT}개]`,
+    `[mailbox 샘플 최대 ${input.mailboxSampleLimit}개]`,
     formatMailboxSamples(input.mailboxSamples),
     '',
-    `[actionable task 샘플 최대 ${PROMPT_TASK_SAMPLE_LIMIT}개]`,
+    `[actionable task 샘플 최대 ${input.taskSampleLimit}개]`,
     formatTaskSamples(input.actionableTaskSamples),
+    '',
+    `[recent session notes 최대 ${PROMPT_RECENT_SESSION_NOTE_LIMIT}개]`,
+    formatRecentSessionNotes(input.recentSessionNotes),
     '',
     '위 지침을 기반으로 지금 세션에서 필요한 triage/작업/소통을 수행하라.',
   ].join('\n');

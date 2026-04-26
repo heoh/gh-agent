@@ -29,6 +29,8 @@ export interface Config {
   heavyAgentCommand: string | null;
   pollIntervalMs: number;
   debounceMs: number;
+  promptMailboxSampleLimit: number;
+  promptTaskSampleLimit: number;
   projectId: string | null;
   projectTitle: string | null;
   projectUrl: string | null;
@@ -126,6 +128,8 @@ export interface TaskListItem {
   type: TaskType | null;
   executionClass: TaskExecutionClass | null;
   sourceLink: string | null;
+  nextAction?: string | null;
+  shortNote?: string | null;
 }
 
 export interface TaskListFilters {
