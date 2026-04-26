@@ -76,6 +76,13 @@ function createTaskFixture(taskId: string) {
   };
 }
 
+interface SessionExecuteInput {
+  command: string;
+  prompt: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
 function createGitHubClientStub(
   unreadCount: number,
   actionableCount: number,
@@ -272,6 +279,12 @@ function createGitHubClientStub(
         ghConfigDir: paths.ghConfigDir,
       };
     },
+    async getGitIdentity() {
+      return {
+        name: 'Test User',
+        email: '123+test-user@users.noreply.github.com',
+      };
+    },
   };
 }
 
@@ -322,11 +335,17 @@ describe('commands', () => {
       string,
       unknown
     >;
+    const gitConfig = await readFile(paths.gitConfigGlobalFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
     expect(state.currentMode).toBe('sleeping');
+    expect(gitConfig).toContain('[user]');
+    expect(gitConfig).toContain('name = Test User');
+    expect(gitConfig).toContain(
+      'email = 123+test-user@users.noreply.github.com',
+    );
     expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
@@ -367,6 +386,13 @@ describe('commands', () => {
 
   it('runCommand wakes, persists state, records a decision, and releases the lock', async () => {
     const logs = captureConsoleLogs();
+    let executeInput: SessionExecuteInput = {
+      command: '',
+      prompt: '',
+      cwd: '',
+      env: {},
+    };
+    let didCaptureExecuteInput = false;
 
     await initCommand({
       githubClient: createGitHubClientStub(0, 0),
@@ -374,7 +400,9 @@ describe('commands', () => {
     await runCommand({
       githubClient: createGitHubClientStub(1, 0),
       maxPollCycles: 1,
-      async executeAgentSession() {
+      async executeAgentSession(input) {
+        executeInput = input;
+        didCaptureExecuteInput = true;
         return 0;
       },
     });
@@ -401,6 +429,11 @@ describe('commands', () => {
     expect(decisions[0].selectedAgentClass).toBe('default');
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
+    expect(didCaptureExecuteInput).toBe(true);
+    expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
+    expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(
+      paths.gitConfigGlobalFile,
+    );
     expect(await readLockInfo(paths.lockFile)).toBeNull();
     expect(logs.some((line) => line.startsWith('Session started: sess_'))).toBe(
       true,
@@ -1258,6 +1291,9 @@ describe('commands', () => {
               detail: 'gh auth login required',
               ghConfigDir: paths.ghConfigDir,
             };
+          },
+          async getGitIdentity() {
+            throw new GitHubAuthError('gh auth login required');
           },
         },
         maxPollCycles: 1,

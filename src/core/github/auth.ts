@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 
-import type { GitHubAuthStatus } from '../types.js';
+import type { GitHubAuthStatus, GitIdentity } from '../types.js';
 import type { WorkspacePaths } from '../workspace.js';
 import { GitHubAuthError, GitHubRuntimeError } from './errors.js';
 import type { GhAuthClient } from './internal.js';
@@ -8,6 +8,13 @@ import type { GhAuthClient } from './internal.js';
 interface GhExecutionResult {
   stdout: string;
   stderr: string;
+}
+
+interface GhViewerProfile {
+  id?: number;
+  login?: string;
+  name?: string | null;
+  email?: string | null;
 }
 
 function createGhEnvironment(
@@ -150,6 +157,42 @@ class DefaultGhAuthClient implements GhAuthClient {
     }
 
     return token;
+  }
+
+  async getGitIdentity(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  ): Promise<GitIdentity> {
+    const { stdout } = await runGhCommand(
+      ['api', '--hostname', 'github.com', 'user'],
+      paths,
+    );
+    const profile = JSON.parse(stdout) as GhViewerProfile;
+    const login =
+      typeof profile.login === 'string' && profile.login.length > 0
+        ? profile.login
+        : null;
+
+    if (login === null) {
+      throw new GitHubRuntimeError(
+        'GitHub account login could not be resolved for git identity.',
+      );
+    }
+
+    const name =
+      typeof profile.name === 'string' && profile.name.trim().length > 0
+        ? profile.name.trim()
+        : login;
+    const email =
+      typeof profile.email === 'string' && profile.email.trim().length > 0
+        ? profile.email.trim()
+        : typeof profile.id === 'number'
+          ? `${profile.id}+${login}@users.noreply.github.com`
+          : `${login}@users.noreply.github.com`;
+
+    return {
+      name,
+      email,
+    };
   }
 }
 

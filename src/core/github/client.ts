@@ -2,6 +2,7 @@ import type {
   Config,
   EnsuredGitHubProject,
   GitHubAuthStatus,
+  GitIdentity,
   GitHubSignalClient,
   MailboxNotification,
   MailboxProjectCard,
@@ -435,6 +436,12 @@ class DefaultGitHubSignalClient implements GitHubSignalClient {
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   ): Promise<GitHubAuthStatus> {
     return this.authClient.getAuthStatus(paths);
+  }
+
+  async getGitIdentity(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+  ): Promise<GitIdentity> {
+    return this.authClient.getGitIdentity(paths);
   }
 }
 

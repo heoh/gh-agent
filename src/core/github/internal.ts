@@ -1,4 +1,4 @@
-import type { GitHubAuthStatus } from '../types.js';
+import type { GitHubAuthStatus, GitIdentity } from '../types.js';
 import type { WorkspacePaths } from '../workspace.js';
 
 export const ACTIONABLE_STATUS_NAMES = new Set(['Ready', 'Doing']);
@@ -16,6 +16,7 @@ export interface GhAuthClient {
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   ): Promise<GitHubAuthStatus>;
   getToken(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<string>;
+  getGitIdentity(paths: Pick<WorkspacePaths, 'ghConfigDir'>): Promise<GitIdentity>;
 }
 
 export interface GitHubApiClient {

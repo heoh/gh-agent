@@ -237,6 +237,11 @@ export interface GitHubAuthStatus {
   ghConfigDir: string;
 }
 
+export interface GitIdentity {
+  name: string;
+  email: string;
+}
+
 export interface GitHubProjectConfig {
   projectId: string;
   projectTitle: string;
@@ -328,4 +333,5 @@ export interface GitHubSignalClient {
     status: TaskStatus,
   ): Promise<TaskCard>;
   getAuthStatus(paths: { ghConfigDir: string }): Promise<GitHubAuthStatus>;
+  getGitIdentity(paths: { ghConfigDir: string }): Promise<GitIdentity>;
 }

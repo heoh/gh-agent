@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import type {
   Config,
+  GitIdentity,
   ProjectExecutionClassOptionIds,
   ProjectFieldIds,
   ProjectStatusOptionIds,
@@ -25,6 +26,7 @@ export interface WorkspacePaths {
   lockFile: string;
   wakeDecisionsFile: string;
   ghConfigDir: string;
+  gitConfigGlobalFile: string;
   workDir: string;
 }
 
@@ -83,6 +85,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
     lockFile: path.join(stateDir, 'lock'),
     wakeDecisionsFile: path.join(stateDir, 'wake_decisions.jsonl'),
     ghConfigDir: path.join(stateDir, 'gh-config'),
+    gitConfigGlobalFile: path.join(stateDir, '.gitconfig'),
     workDir: path.join(root, 'work'),
   };
 }
@@ -299,6 +302,7 @@ export async function ensureWorkspaceStructure(
   await mkdir(paths.workDir, { recursive: true });
   await mkdir(paths.stateDir, { recursive: true });
   await mkdir(paths.ghConfigDir, { recursive: true });
+  await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
 }
 
 export async function writeJsonAtomic(
@@ -341,6 +345,21 @@ export async function saveConfig(
   config: Config,
 ): Promise<void> {
   await writeJsonAtomic(paths.configFile, normalizeConfig(config));
+}
+
+function sanitizeGitConfigValue(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+export async function saveWorkspaceGitIdentity(
+  paths: WorkspacePaths,
+  identity: GitIdentity,
+): Promise<void> {
+  const name = sanitizeGitConfigValue(identity.name);
+  const email = sanitizeGitConfigValue(identity.email);
+
+  const nextContent = `[user]\n  name = ${name}\n  email = ${email}\n`;
+  await writeFile(paths.gitConfigGlobalFile, nextContent, 'utf8');
 }
 
 export async function ensureSessionState(

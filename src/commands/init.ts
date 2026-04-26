@@ -2,6 +2,7 @@ import {
   saveConfig,
   ensureConfig,
   ensureSessionState,
+  saveWorkspaceGitIdentity,
   ensureWorkspaceStructure,
   getWorkspacePaths,
   pathExists,
@@ -52,6 +53,8 @@ export async function initCommand(
     if (authStatus.kind !== 'authenticated') {
       throw new GitHubAuthError(authStatus.detail);
     }
+    const gitIdentity = await githubClient.getGitIdentity(paths);
+    await saveWorkspaceGitIdentity(paths, gitIdentity);
 
     let project;
 
@@ -94,6 +97,7 @@ export async function initCommand(
       'Directories: work/, .gh-agent/, and .gh-agent/gh-config/ ensured',
     );
     console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
+    console.log(`Git identity: ${gitIdentity.name} <${gitIdentity.email}>`);
     console.log(
       `GitHub Project: ${project.wasCreated ? 'created' : 'reused'} ${project.projectTitle}`,
     );

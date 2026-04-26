@@ -32,14 +32,12 @@ async function defaultExecuteAgentSession(input: {
   command: string;
   prompt: string;
   cwd: string;
+  env: NodeJS.ProcessEnv;
 }): Promise<number | null> {
   return await new Promise<number | null>((resolve, reject) => {
     const child = spawn(input.command, {
       cwd: input.cwd,
-      env: {
-        ...process.env,
-        prompt: input.prompt,
-      },
+      env: input.env,
       shell: true,
       stdio: 'inherit',
     });
@@ -51,6 +49,19 @@ async function defaultExecuteAgentSession(input: {
   });
 }
 
+function createSessionEnvironment(input: {
+  prompt: string;
+  ghConfigDir: string;
+  gitConfigGlobalFile: string;
+}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    prompt: input.prompt,
+    GH_CONFIG_DIR: input.ghConfigDir,
+    GIT_CONFIG_GLOBAL: input.gitConfigGlobalFile,
+  };
+}
+
 export async function runCommand(
   dependencies: {
     githubClient?: GitHubSignalClient;
@@ -59,6 +70,7 @@ export async function runCommand(
       command: string;
       prompt: string;
       cwd: string;
+      env: NodeJS.ProcessEnv;
     }) => Promise<number | null>;
   } = {},
 ): Promise<void> {
@@ -188,6 +200,11 @@ export async function runCommand(
             command: execution.command,
             prompt,
             cwd: paths.root,
+            env: createSessionEnvironment({
+              prompt,
+              ghConfigDir: paths.ghConfigDir,
+              gitConfigGlobalFile: paths.gitConfigGlobalFile,
+            }),
           });
           console.log(
             `Session command exited with code ${sessionExitCode ?? 'null'}`,
