@@ -19,6 +19,16 @@ Local minimum is Node `>=20`; CI currently runs Node `24`.
 npm ci
 ```
 
+## Local CLI Install (Optional)
+
+If you want to run this repo as a local `gh-agent` CLI while developing:
+
+```bash
+npm install
+npm run build
+npm link
+```
+
 ## Choose Contribution Type
 
 - `Bug Report`: Use the `Bug Report` issue template for reproducible defects or regressions.

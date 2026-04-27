@@ -1,144 +1,100 @@
-# gh-agent
+# gh-agent: GitHub Agent
 
-`gh-agent` is a TypeScript CLI for running a GitHub mailbox + project task loop
-from your local workspace.
+> Bring your agent to GitHub.
 
-It helps you:
+GitHub-native agent runner for continuous collaboration workflows.
 
-- read and triage unread GitHub notifications (`mailbox`)
-- promote important threads to GitHub Project cards
-- manage task cards (`task`) in a consistent CLI flow
-- run a foreground automation loop (`run`) with workspace state tracking
+This is an independent open-source project and is not affiliated with,
+endorsed by, or sponsored by GitHub.
 
-## Requirements
+## Who This Is For
 
-- Node.js `>=20`
-- GitHub CLI (`gh`) installed and available on `PATH`
-- A GitHub account with access to GitHub Projects (v2)
+Use `gh-agent` when you want a dedicated GitHub agent account that wakes on
+GitHub signals and works directly in issues, PRs, reviews, and comments.
 
 ## Install
-
-Install globally from npm after publication:
 
 ```bash
 npm install -g gh-agent
 ```
 
-For local development from this repository:
+## Agent Account Setup (Required)
 
-```bash
-npm ci
-npm run build
-npm run start -- --help
-```
+Before first run, prepare a **separate GitHub account** for delegation:
+
+- Use a dedicated GitHub account for `gh-agent`.
+- Ensure it can access the target repositories.
 
 ## Quick Start
 
-1. Initialize your workspace:
+### 1) Initialize once
+
+Run this in the directory you want to use as the agent workspace.
 
 ```bash
 gh-agent init
 ```
 
-2. Check current status:
+`gh-agent init` ensures a GitHub Project named `gh-agent` exists on the
+authenticated account (creates it if missing).
 
-```bash
-gh-agent status
-```
-
-3. Inspect unread notifications:
-
-```bash
-gh-agent mailbox list --limit 20
-```
-
-4. Promote a thread into your project:
-
-```bash
-gh-agent mailbox promote <thread-id> --status ready
-```
-
-5. Start the foreground loop:
+### 2) Run the loop
 
 ```bash
 gh-agent run
 ```
 
-## Authentication
+Stop with `Ctrl+C`.
 
-`gh-agent` uses GitHub CLI authentication under the hood.
-
-If authentication is missing or expired, run:
+### 3) Optional diagnostics
 
 ```bash
-gh auth login --hostname github.com --scopes project
+gh-agent status
 ```
 
-If you need to refresh scopes later:
+Use this only for quick operational checks (lock, mode, auth, signal summary).
 
-```bash
-gh auth refresh --hostname github.com --scopes project
-```
+## How It Works
 
-## Core Commands
+`gh-agent run` keeps a foreground loop running in your workspace.
+It monitors GitHub signals (notifications and project updates), and wakes only
+when there are unread messages or remaining tasks.
+When work is needed, it runs an agent session and then returns to waiting.
 
-### Workspace
+## Commands
 
-- `gh-agent init`: Initialize `.gh-agent` workspace config and project metadata.
-- `gh-agent status`: Print auth, project, and runtime status summary.
-- `gh-agent run`: Start the foreground orchestration loop.
+- User-facing: `gh-agent init`, `gh-agent run`, `gh-agent status`
+- Agent-internal: `gh-agent mailbox ...`, `gh-agent task ...`
 
-### Mailbox
-
-- `gh-agent mailbox list [--limit <n>]`
-- `gh-agent mailbox show <threadId>`
-- `gh-agent mailbox promote <threadId...> [--status ready|waiting]`
-- `gh-agent mailbox ready <threadId...>`
-- `gh-agent mailbox wait <threadId...>`
-- `gh-agent mailbox ignore <threadId...>`
-
-### Tasks
-
-- `gh-agent task list [--status ...] [--priority ...] [--type ...] [--execution-class ...]`
-- `gh-agent task show <taskId>`
-- `gh-agent task create --title ... --status ... [options]`
-- `gh-agent task update <taskId> [options]`
-- `gh-agent task ready <taskId...>`
-- `gh-agent task doing <taskId...>`
-- `gh-agent task wait <taskId...>`
-- `gh-agent task done <taskId...>`
+For full command details, run `gh-agent --help`.
 
 ## Troubleshooting
 
-### `gh-agent` reports authentication errors
+### Auth is broken or wrong account is connected
 
-- Verify `gh auth status --hostname github.com`
-- Re-run `gh auth login` with `--scopes project`
+Symptom: auth errors persist, or `gh-agent` keeps using the wrong GitHub account.
 
-### `init` says project configuration is missing or invalid
+From your agent workspace directory, reset local workspace auth state:
 
-- Re-run `gh-agent init` to rebuild required field mappings
-- Ensure your GitHub account can read/write the target project
-
-### `npm run ci:verify` fails before release
-
-- Run checks one by one to isolate the failure:
+> Warning: This removes local `gh-agent` workspace state in the current directory.
 
 ```bash
-npm run format:check
-npm run lint
-npm run typecheck
-npm test
-npm run test:coverage
-npm run build
+rm -rf .gh-agent/
+gh-agent init
 ```
 
-## Documentation
+### `run` says another instance is already running
 
-- Contributor workflow: `CONTRIBUTING.md`
-- npm release process: `docs/release/npm-release.md`
-- Architecture notes: `docs/architecture/`
-- Specs: `docs/specs/`
+Symptom: lock conflict from another active runner.
+
+- Check with `gh-agent status`.
+- Stop the other active `gh-agent run` process, then run again.
+- Only if no other `gh-agent run` process exists, remove stale lock:
+
+```bash
+rm -f .gh-agent/lock
+gh-agent run
+```
 
 ## License
 
