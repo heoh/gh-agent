@@ -72,9 +72,7 @@ It runs `npm ci` and then `npm run ci:verify`.
 - format check
 - lint
 - typecheck
-- tests
 - coverage run
-- build
 - `npm pack --dry-run`
 
 Release workflows (`Prepare release PR`, `Publish package to npm`) reuse the same
@@ -87,12 +85,12 @@ If you need to run checks individually, these scripts are available:
 
 ```bash
 npm run format:check
-npm run verify:readme
 npm run lint
 npm run typecheck
 npm test
 npm run test:coverage
 npm run build
+npm run pack:dry-run
 npm run ci:verify
 ```
 

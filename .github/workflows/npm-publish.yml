@@ -57,8 +57,5 @@ jobs:
 
           echo "Validated $package_name@$package_version for publication."
 
-      - name: Run CI verification gate
-        run: npm run ci:verify
-
       - name: Publish to npm
         run: npm publish

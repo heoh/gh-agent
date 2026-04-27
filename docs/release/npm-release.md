@@ -22,10 +22,8 @@ Current `ci:verify` order:
 1. format check
 2. lint
 3. typecheck
-4. tests
-5. coverage
-6. build
-7. `npm pack --dry-run`
+4. coverage
+5. `npm pack --dry-run`
 
 For docs-only validation, run:
 
@@ -42,15 +40,10 @@ Lifecycle guards in `package.json`:
 
 If `release:check` fails, stop and fix before opening/merging a release PR.
 
-### `format/lint/typecheck/test/coverage` failure
+### `format/lint/typecheck/coverage` failure
 
 - Fix code or tests
 - Re-run `npm run ci:verify`
-
-### `build` failure
-
-- Fix TypeScript compile errors
-- Re-run `npm run build`, then `npm run ci:verify`
 
 ### `npm pack --dry-run` failure
 
@@ -98,7 +91,7 @@ Publish guardrails:
 - ref must be `main`
 - workflow input version must equal `package.json#version`
 - fail if version already exists on npm
-- run `npm run ci:verify` before publish
+- enforce `prepublishOnly` (`npm run release:check`) during `npm publish`
 
 ## npm authentication strategy
 
