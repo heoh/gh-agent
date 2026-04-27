@@ -1,0 +1,132 @@
+name: Prepare release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version for the release PR (example: 0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Prepare version bump PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Require main branch
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "This workflow must run from main. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate requested version
+        id: version
+        run: |
+          requested_version="${{ inputs.version }}"
+          current_version="$(node -p "require('./package.json').version")"
+          package_name="$(node -p "require('./package.json').name")"
+
+          if [ "$requested_version" != "$(printf '%s' "$requested_version" | xargs)" ]; then
+            echo "Version input must not include leading or trailing whitespace."
+            exit 1
+          fi
+
+          if ! printf '%s' "$requested_version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "Version must be a SemVer value without a leading v, for example 0.2.0."
+            exit 1
+          fi
+
+          if [ "$requested_version" = "$current_version" ]; then
+            echo "Requested version already matches package.json: $current_version"
+            exit 1
+          fi
+
+          if npm view "$package_name@$requested_version" version --registry=https://registry.npmjs.org >/tmp/npm-published-version 2>/dev/null; then
+            echo "$package_name@$requested_version is already published to npm."
+            exit 1
+          fi
+
+          echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "version=$requested_version" >> "$GITHUB_OUTPUT"
+
+      - name: Update package version
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
+
+      - name: Check release package
+        run: npm run release:check
+
+      - name: Create or update release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_VERSION: ${{ steps.version.outputs.current_version }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          branch="gh-agent/prepare-release-v$RELEASE_VERSION"
+          title="Prepare release $RELEASE_VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add package.json package-lock.json
+
+          if git diff --cached --quiet; then
+            echo "No version changes were generated."
+            exit 1
+          fi
+
+          git commit -m "chore: prepare release $RELEASE_VERSION"
+          git push --force-with-lease origin "HEAD:$branch"
+
+          cat > /tmp/release-pr-body.md <<EOF
+          ## Background
+
+          This PR prepares the reviewed source state for publishing $PACKAGE_NAME@$RELEASE_VERSION.
+
+          ## Changes
+
+          - Updates package.json from $CURRENT_VERSION to $RELEASE_VERSION.
+          - Updates package-lock.json root package metadata to $RELEASE_VERSION.
+
+          ## Validation
+
+          The prepare workflow ran:
+
+          - npm ci
+          - npm run release:check
+
+          ## Release sequence
+
+          After this PR is reviewed and merged to main, run the Publish package to npm workflow with version $RELEASE_VERSION. The publish workflow verifies that the entered version matches main's committed package.json version before publishing.
+          EOF
+
+          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_pr" ]; then
+            gh pr edit "$existing_pr" --title "$title" --body-file /tmp/release-pr-body.md
+            echo "Updated existing release PR #$existing_pr."
+          else
+            gh pr create --base main --head "$branch" --title "$title" --body-file /tmp/release-pr-body.md
+          fi
