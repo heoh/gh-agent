@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Config } from './types.js';
+import { GitHubAuthError, GitHubRuntimeError } from './github/errors.js';
 
 const execFileMock = vi.fn();
 const spawnMock = vi.fn();
@@ -1184,5 +1185,67 @@ describe('GitHub mailbox mutations', () => {
       expect.stringContaining('singleSelectOptionId'),
       expect.objectContaining({ optionId: 'status_done' }),
     );
+  });
+});
+
+describe('GitHub API failure handling', () => {
+  it('maps 401 responses to GitHubAuthError for mailbox listing', async () => {
+    octokitPaginateMock.mockRejectedValueOnce({
+      status: 401,
+      message: 'Bad credentials',
+    });
+
+    const client = createGitHubSignalClient();
+
+    await expect(
+      client.listMailboxNotifications({ ghConfigDir: '/tmp/gh-config' }),
+    ).rejects.toBeInstanceOf(GitHubAuthError);
+  });
+
+  it('maps rate-limit responses to GitHubRuntimeError', async () => {
+    octokitPaginateMock.mockRejectedValueOnce({
+      status: 403,
+      message: 'API rate limit exceeded for test user.',
+    });
+
+    const client = createGitHubSignalClient();
+    const result = client.listMailboxNotifications({
+      ghConfigDir: '/tmp/gh-config',
+    });
+
+    await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
+    await expect(result).rejects.toThrow(/rate limit exceeded/i);
+  });
+
+  it('fails fast when GraphQL returns errors without usable data', async () => {
+    octokitGraphqlMock.mockResolvedValueOnce({
+      data: null,
+      errors: [{ message: 'Project query failed' }],
+    });
+
+    const client = createGitHubSignalClient();
+    const result = client.ensureProject(
+      { ghConfigDir: '/tmp/gh-config' },
+      'gh-agent',
+    );
+
+    await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
+    await expect(result).rejects.toThrow(
+      /GraphQL response did not include usable data/i,
+    );
+  });
+
+  it('maps transient network failures to GitHubRuntimeError', async () => {
+    octokitRequestMock.mockRejectedValueOnce({
+      code: 'ETIMEDOUT',
+      message: 'connect ETIMEDOUT api.github.com:443',
+    });
+    const result = resolveMailboxThreadDetail(
+      { ghConfigDir: '/tmp/gh-config' },
+      'thread_1',
+    );
+
+    await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
+    await expect(result).rejects.toThrow(/GitHub network error/i);
   });
 });

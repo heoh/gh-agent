@@ -26,10 +26,12 @@ describe('workspace normalization', () => {
 
     const config = await ensureConfig(paths);
     const state = await ensureSessionState(paths, config.agentId);
+    const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(paths.configFile).toBe(
       `${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
+    expect(stateGitignore).toBe('*\n!config.json\n');
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:
@@ -75,7 +77,7 @@ describe('workspace normalization', () => {
     });
   });
 
-  it('normalizes partial config values back to defaults', async () => {
+  it('normalizes partial config values and clamps fractional sample limits to at least one', async () => {
     const paths = getWorkspacePaths(getWorkspaceRoot());
     await ensureWorkspaceStructure(paths);
     await writeFile(
@@ -86,9 +88,9 @@ describe('workspace normalization', () => {
         heavyAgentCommand: 123,
         pollIntervalMs: -1,
         debounceMs: 'invalid',
-        promptMailboxSampleLimit: 0,
+        promptMailboxSampleLimit: 0.5,
         promptTaskSampleLimit: 'invalid',
-        promptRecentTaskCardLimit: 0,
+        promptRecentTaskCardLimit: 0.9,
       }),
       'utf8',
     );
@@ -102,9 +104,9 @@ describe('workspace normalization', () => {
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
-      promptMailboxSampleLimit: 20,
+      promptMailboxSampleLimit: 1,
       promptTaskSampleLimit: 20,
-      promptRecentTaskCardLimit: 5,
+      promptRecentTaskCardLimit: 1,
       projectId: null,
       projectTitle: null,
       projectUrl: null,

@@ -26,20 +26,72 @@ function extractGitHubErrorMessage(error: unknown): string {
   return 'Unknown GitHub error';
 }
 
+function getGitHubErrorStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+
+    return typeof status === 'number' ? status : null;
+  }
+
+  return null;
+}
+
+function getGitHubErrorCode(error: unknown): string | null {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+
+    return typeof code === 'string' && code.length > 0 ? code : null;
+  }
+
+  return null;
+}
+
+function isGitHubRateLimitFailure(error: unknown): boolean {
+  const status = getGitHubErrorStatus(error);
+
+  if (status === 429) {
+    return true;
+  }
+
+  if (status === 403) {
+    return /rate limit|secondary rate limit|too many requests/i.test(
+      extractGitHubErrorMessage(error),
+    );
+  }
+
+  return false;
+}
+
 function isGitHubAuthFailure(error: unknown): boolean {
   if (error instanceof GitHubAuthError) {
     return true;
   }
 
-  if (typeof error === 'object' && error !== null && 'status' in error) {
-    const status = (error as { status?: unknown }).status;
+  const status = getGitHubErrorStatus(error);
 
-    if (status === 401 || status === 403) {
-      return true;
-    }
+  if (status === 401) {
+    return true;
   }
 
   return /not logged into|authentication failed|run:\s+gh auth login|gh auth login|gh_token|bad credentials|requires authentication/i.test(
+    extractGitHubErrorMessage(error),
+  );
+}
+
+function isGitHubNetworkFailure(error: unknown): boolean {
+  const code = getGitHubErrorCode(error);
+
+  if (
+    code === 'ECONNRESET' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EAI_AGAIN' ||
+    code === 'ENOTFOUND'
+  ) {
+    return true;
+  }
+
+  return /network|socket hang up|timed out|connection reset|getaddrinfo/i.test(
     extractGitHubErrorMessage(error),
   );
 }
@@ -55,6 +107,14 @@ function toGitHubApiError(
 
   if (isGitHubAuthFailure(error)) {
     return new GitHubAuthError(message);
+  }
+
+  if (isGitHubRateLimitFailure(error)) {
+    return new GitHubRuntimeError(`GitHub API rate limit exceeded: ${message}`);
+  }
+
+  if (isGitHubNetworkFailure(error)) {
+    return new GitHubRuntimeError(`GitHub network error: ${message}`);
   }
 
   return new GitHubRuntimeError(message);
@@ -162,6 +222,32 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     try {
       const octokit = await this.getOctokit(paths);
       const response = await octokit.graphql<unknown>(query, variables);
+
+      if (
+        typeof response === 'object' &&
+        response !== null &&
+        'errors' in response &&
+        Array.isArray((response as { errors?: unknown }).errors) &&
+        ((response as { errors: unknown[] }).errors ?? []).length > 0 &&
+        (!('data' in response) ||
+          (response as { data?: unknown }).data === null ||
+          (response as { data?: unknown }).data === undefined)
+      ) {
+        const firstError = (
+          response as {
+            errors: Array<{ message?: unknown }>;
+          }
+        ).errors[0];
+        const errorMessage =
+          typeof firstError?.message === 'string' &&
+          firstError.message.length > 0
+            ? firstError.message
+            : 'Unknown GraphQL error';
+
+        throw new GitHubRuntimeError(
+          `GitHub GraphQL response did not include usable data: ${errorMessage}`,
+        );
+      }
 
       if (
         typeof response === 'object' &&

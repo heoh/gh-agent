@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -339,6 +339,7 @@ describe('commands', () => {
       unknown
     >;
     const gitConfig = await readFile(paths.gitConfigGlobalFile, 'utf8');
+    const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.defaultAgentCommand).toBe(
@@ -353,6 +354,7 @@ describe('commands', () => {
     expect(gitConfig).toContain(
       'email = 123+test-user@users.noreply.github.com',
     );
+    expect(stateGitignore).toBe('*\n!config.json\n');
     expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
@@ -373,9 +375,12 @@ describe('commands', () => {
     await initCommand({
       githubClient: createGitHubClientStub(0, 0),
     });
-    await statusCommand({
-      githubClient: createGitHubClientStub(0, 0),
-    });
+    await statusCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
 
     expect(logs).toContain(`Workspace: ${getWorkspaceRoot()}`);
     expect(logs).toContain(
@@ -395,6 +400,26 @@ describe('commands', () => {
     expect(logs).toContain('GitHub auth: authenticated');
   });
 
+  it('statusCommand resolves the nearest workspace root from nested directories', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    const nestedCwd = `${getWorkspaceRoot()}/work/acme/widgets`;
+    await mkdir(nestedCwd, { recursive: true });
+
+    await statusCommand(
+      { cwd: nestedCwd },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    expect(logs).toContain(`Workspace: ${getWorkspaceRoot()}`);
+  });
+
   it('runCommand wakes, persists state, records a decision, and releases the lock', async () => {
     const logs = captureConsoleLogs();
     let executeInput: SessionExecuteInput = {
@@ -408,15 +433,18 @@ describe('commands', () => {
     await initCommand({
       githubClient: createGitHubClientStub(0, 0),
     });
-    await runCommand({
-      githubClient: createGitHubClientStub(1, 0),
-      maxPollCycles: 1,
-      async executeAgentSession(input) {
-        executeInput = input;
-        didCaptureExecuteInput = true;
-        return 0;
+    await runCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(1, 0),
+        maxPollCycles: 1,
+        async executeAgentSession(input) {
+          executeInput = input;
+          didCaptureExecuteInput = true;
+          return 0;
+        },
       },
-    });
+    );
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     const state = JSON.parse(await readFile(paths.stateFile, 'utf8')) as Record<
@@ -450,6 +478,38 @@ describe('commands', () => {
     expect(logs).toContain('Session ended');
   });
 
+  it('runCommand resolves the nearest workspace root from nested directories', async () => {
+    let executeInput: SessionExecuteInput = {
+      command: '',
+      prompt: '',
+      cwd: '',
+      env: {},
+    };
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    const nestedCwd = `${getWorkspaceRoot()}/work/acme/widgets`;
+    await mkdir(nestedCwd, { recursive: true });
+
+    await runCommand(
+      { cwd: nestedCwd },
+      {
+        githubClient: createGitHubClientStub(1, 0),
+        maxPollCycles: 1,
+        async executeAgentSession(input) {
+          executeInput = input;
+          return 0;
+        },
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    expect(executeInput.cwd).toBe(getWorkspaceRoot());
+    expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
+  });
+
   it('runCommand respects cooldown and still releases the lock', async () => {
     const logs = captureConsoleLogs();
 
@@ -468,13 +528,16 @@ describe('commands', () => {
       'utf8',
     );
 
-    await runCommand({
-      githubClient: createGitHubClientStub(1, 0),
-      maxPollCycles: 1,
-      async executeAgentSession() {
-        return 0;
+    await runCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(1, 0),
+        maxPollCycles: 1,
+        async executeAgentSession() {
+          return 0;
+        },
       },
-    });
+    );
 
     const decisions = (await readFile(paths.wakeDecisionsFile, 'utf8'))
       .trim()
@@ -495,13 +558,16 @@ describe('commands', () => {
     await initCommand({
       githubClient: createGitHubClientStub(0, 0),
     });
-    await runCommand({
-      githubClient: createGitHubClientStub(1, 0),
-      maxPollCycles: 1,
-      async executeAgentSession() {
-        throw new Error('spawn failed');
+    await runCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(1, 0),
+        maxPollCycles: 1,
+        async executeAgentSession() {
+          throw new Error('spawn failed');
+        },
       },
-    });
+    );
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     const state = JSON.parse(await readFile(paths.stateFile, 'utf8')) as Record<
@@ -545,14 +611,17 @@ describe('commands', () => {
       'utf8',
     );
 
-    await runCommand({
-      githubClient: createGitHubClientStub(1, 1),
-      maxPollCycles: 1,
-      async executeAgentSession(input) {
-        prompts.push(input.prompt);
-        return 0;
+    await runCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(1, 1),
+        maxPollCycles: 1,
+        async executeAgentSession(input) {
+          prompts.push(input.prompt);
+          return 0;
+        },
       },
-    });
+    );
 
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain('[mailbox 샘플 최대 1개]');
@@ -1311,66 +1380,93 @@ describe('commands', () => {
     });
 
     await expect(
-      runCommand({
-        githubClient: {
-          async login() {
-            return;
+      runCommand(
+        {},
+        {
+          githubClient: {
+            async login() {
+              return;
+            },
+            async refreshProjectScopes() {
+              return;
+            },
+            async ensureProject() {
+              return createEnsuredProjectStub();
+            },
+            async getSignalSummary() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async listMailboxNotifications() {
+              return [];
+            },
+            async getMailboxThreadDetail() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async promoteMailboxThread() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async markMailboxThreadAsRead() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async listRelatedMailboxCards() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async listTaskCards() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async getTaskCard() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async createTaskCard() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async updateTaskCard() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async setTaskCardStatus() {
+              throw new GitHubAuthError('gh auth login required');
+            },
+            async getAuthStatus(paths) {
+              return {
+                kind: 'unauthenticated',
+                detail: 'gh auth login required',
+                ghConfigDir: paths.ghConfigDir,
+              };
+            },
+            async getGitIdentity() {
+              throw new GitHubAuthError('gh auth login required');
+            },
           },
-          async refreshProjectScopes() {
-            return;
-          },
-          async ensureProject() {
-            return createEnsuredProjectStub();
-          },
-          async getSignalSummary() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async listMailboxNotifications() {
-            return [];
-          },
-          async getMailboxThreadDetail() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async promoteMailboxThread() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async markMailboxThreadAsRead() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async listRelatedMailboxCards() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async listTaskCards() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async getTaskCard() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async createTaskCard() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async updateTaskCard() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async setTaskCardStatus() {
-            throw new GitHubAuthError('gh auth login required');
-          },
-          async getAuthStatus(paths) {
-            return {
-              kind: 'unauthenticated',
-              detail: 'gh auth login required',
-              ghConfigDir: paths.ghConfigDir,
-            };
-          },
-          async getGitIdentity() {
-            throw new GitHubAuthError('gh auth login required');
-          },
+          maxPollCycles: 1,
         },
-        maxPollCycles: 1,
-      }),
+      ),
     ).rejects.toMatchObject({
       message: 'GitHub authentication error: gh auth login required',
       exitCode: 3,
+    });
+  });
+
+  it('statusCommand maps missing workspaces to exit code 2', async () => {
+    await expect(
+      statusCommand({
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
+    });
+  });
+
+  it('runCommand maps missing workspaces to exit code 2', async () => {
+    await expect(
+      runCommand({
+        cwd: '/tmp/definitely-not-a-gh-agent-workspace',
+      }),
+    ).rejects.toMatchObject({
+      message:
+        'No gh-agent workspace found in the current directory or its parent directories.',
+      exitCode: 2,
     });
   });
 

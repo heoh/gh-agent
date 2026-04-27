@@ -9,7 +9,9 @@ import {
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
+  findWorkspaceRoot,
   getWorkspacePaths,
+  WorkspaceNotFoundError,
 } from '../core/workspace.js';
 
 function formatValue(label: string, value: string | number | null): string {
@@ -17,14 +19,19 @@ function formatValue(label: string, value: string | number | null): string {
 }
 
 export async function statusCommand(
+  options: {
+    cwd?: string;
+  } = {},
   dependencies: {
     githubClient?: GitHubSignalClient;
   } = {},
 ): Promise<void> {
-  const paths = getWorkspacePaths();
-  const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
-
   try {
+    const workspaceRoot = await findWorkspaceRoot(options.cwd);
+    const paths = getWorkspacePaths(workspaceRoot);
+    const githubClient =
+      dependencies.githubClient ?? createGitHubSignalClient();
+
     await ensureWorkspaceStructure(paths);
     const config = await ensureConfig(paths);
     const state = await ensureSessionState(paths, config.agentId);
@@ -65,6 +72,15 @@ export async function statusCommand(
     console.log(formatValue('GitHub auth', authStatus.kind));
     console.log(formatValue('GitHub auth detail', authStatus.detail));
   } catch (error) {
+    if (error instanceof WorkspaceNotFoundError) {
+      throw Object.assign(
+        new Error(
+          'No gh-agent workspace found in the current directory or its parent directories.',
+        ),
+        { exitCode: 2 },
+      );
+    }
+
     if (error instanceof GitHubAuthError) {
       throw Object.assign(
         new Error(`GitHub authentication error: ${error.message}`),

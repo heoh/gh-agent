@@ -1,112 +1,112 @@
 # npm release path
 
-This project keeps `dist/` out of git, so every npm package must be built from the
-current checkout before it is packed or published.
+This document is for maintainers who cut npm releases.
 
-## Maintainer check
+`README.md` is the user onboarding guide. This file focuses only on release
+operations, validation order, and publish failure handling.
 
-Run this from a clean checkout before opening or approving a release PR:
+## Canonical release gate
+
+Run from a clean checkout:
 
 ```bash
 npm ci
 npm run release:check
 ```
 
-`npm run release:check` is the single local and CI release-readiness path. It
-delegates to `npm run ci:verify`, which runs formatting checks, lint, typecheck,
-tests, coverage, a TypeScript build, and `npm pack --dry-run` so the tarball
-contents can be inspected before publication.
+`npm run release:check` delegates to `npm run ci:verify` and is the single
+release-readiness gate used both locally and in CI.
 
-The package also defines lifecycle guards:
+Current `ci:verify` order:
 
-- `prepack` rebuilds `dist/` immediately before `npm pack` creates a tarball.
-- `prepublishOnly` runs `release:check` before `npm publish`.
+1. format check
+2. lint
+3. typecheck
+4. coverage
+5. `npm pack --dry-run`
 
-These guards reduce the risk of publishing stale local build output, but
-maintainers should still use `npm run release:check` as the explicit review
-command because it prints the dry-run package manifest.
-
-For routine implementation PRs, use the same gate locally:
+For docs-only validation, run:
 
 ```bash
-npm run ci:verify
+npm run format:check
 ```
 
-## Publication decisions still owned by maintainers
+Lifecycle guards in `package.json`:
 
-Confirm these before the first public npm publication:
+- `prepack`: rebuilds `dist/` right before tarball creation
+- `prepublishOnly`: blocks `npm publish` unless release checks pass
 
-- Package name: `gh-agent` is the current package name. Confirm npm name
-  availability and whether a scoped name such as `@heoh/gh-agent` is preferred.
-- License: `MIT` is currently declared in `package.json`. Confirm this is the
-  intended public license.
-- Versioning: `0.1.0` is currently declared. Confirm whether the first public
-  release should start at `0.1.0` and use semver from that point.
-- Positioning: `TypeScript-based CLI package for gh-agent.` is the current npm
-  description. Confirm the public README and npm description before publication.
+## Failure handling
 
-## GitHub npm publication
+If `release:check` fails, stop and fix before opening/merging a release PR.
 
-### Prepare a release PR
+### `format/lint/typecheck/coverage` failure
 
-For a new npm version, first run the manual `Prepare release PR` workflow from
-the `main` branch. Enter the target SemVer value, such as `0.2.0`.
+- Fix code or tests
+- Re-run `npm run ci:verify`
 
-The workflow does not publish to npm and does not push directly to `main`.
-Instead, it:
+### `npm pack --dry-run` failure
 
-- Validates that the requested version is SemVer, differs from the current
-  `package.json#version`, and is not already published on npm.
-- Runs `npm version --no-git-tag-version <version>` so `package.json` and
-  `package-lock.json` are updated together.
-- Runs `npm run ci:verify`.
-- Pushes a release branch named `gh-agent/prepare-release-v<version>`.
-- Opens or updates a PR titled `Prepare release <version>`.
+- Check whether the failure is environment-specific (cache/path/permissions)
+- Re-run with explicit cache if needed:
 
-Review and merge that generated PR before publishing. This keeps the version
-change in the normal GitHub review history.
+```bash
+npm_config_cache="$(pwd)/.npm-cache" npm pack --dry-run
+```
 
-### Publish the reviewed version
+- If this succeeds while CI fails, fix CI environment parity before publish
 
-Maintainers can publish from GitHub Actions with the manual `Publish package to
-npm` workflow. Run it from the `main` branch and enter the exact version already
-committed in `package.json`, such as `0.1.0`.
+### Package contents are unexpected
 
-The workflow intentionally does not edit `package.json`, create commits, create
-tags, or publish from release events. Version bumps happen in a reviewed PR
-first; the manual workflow only validates and publishes the version that is
-already on `main`.
+- Validate `files`, `main`, and `bin` in `package.json`
+- Re-run `npm pack --dry-run` and inspect the manifest output again
 
-The workflow guards the publish step by:
+## GitHub release workflows
 
-- Failing unless the selected workflow ref is `main`.
-- Failing unless the `workflow_dispatch` version input equals
-  `package.json#version`.
-- Failing if `npm view <package>@<version>` finds that the package version is
-  already published.
-- Running `npm run ci:verify` before `npm publish`.
+### Prepare release PR
 
-### npm trusted publishing setup
+Use manual workflow `Prepare release PR` from `main` and provide target SemVer
+(e.g. `0.2.0`).
 
-Preferred authentication is npm trusted publishing, not a long-lived npm token.
-Configure the package on npmjs.com with this trusted publisher:
+It will:
+
+- validate SemVer and uniqueness
+- update `package.json` + `package-lock.json`
+- run `npm run ci:verify`
+- push `gh-agent/prepare-release-v<version>`
+- open/update PR `Prepare release <version>`
+
+Merge this PR before publish.
+
+### Publish reviewed version
+
+Use manual workflow `Publish package to npm` from `main` with the exact version
+already committed in `package.json`.
+
+It intentionally does **not** create version bumps, commits, or tags. It only
+validates and publishes the reviewed version on `main`.
+
+Publish guardrails:
+
+- ref must be `main`
+- workflow input version must equal `package.json#version`
+- fail if version already exists on npm
+- enforce `prepublishOnly` (`npm run release:check`) during `npm publish`
+
+## npm authentication strategy
+
+Preferred: npm trusted publishing (OIDC), not long-lived npm tokens.
+
+Trusted publisher settings:
 
 - Publisher: GitHub Actions
-- Organization or user: `heoh`
+- Organization/user: `heoh`
 - Repository: `gh-agent`
-- Workflow filename: `npm-publish.yml`
-- Environment name: leave unset unless the workflow is later changed to use a
-  matching GitHub environment
+- Workflow file: `npm-publish.yml`
+- Environment: unset (unless workflow later requires one)
 
-The workflow grants `id-token: write` and uses a GitHub-hosted runner with Node
-24 so npm can authenticate with OIDC during `npm publish`.
-
-### Token fallback
-
-If trusted publishing is unavailable for the first release, add an `NPM_TOKEN`
-repository secret and change the publish step to pass it as `NODE_AUTH_TOKEN`.
-Use `npm publish --provenance` for token-based publishing so the package still
-gets provenance metadata.
+If trusted publishing is unavailable, use `NPM_TOKEN` temporarily and publish
+with provenance:
 
 ```yaml
 - name: Publish to npm
@@ -114,7 +114,3 @@ gets provenance metadata.
   env:
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
-
-Keep tag or GitHub Release triggered publication as a separate follow-up. That
-flow needs additional decisions for version bump PRs, bump commits, tag ordering,
-and duplicate-publish recovery.

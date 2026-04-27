@@ -25,8 +25,10 @@ import {
   ensureConfig,
   ensureSessionState,
   ensureWorkspaceStructure,
+  findWorkspaceRoot,
   getWorkspacePaths,
   saveSessionState,
+  WorkspaceNotFoundError,
 } from '../core/workspace.js';
 
 async function defaultExecuteAgentSession(input: {
@@ -68,7 +70,7 @@ function normalizePromptSampleLimit(value: number, fallback: number): number {
     return fallback;
   }
 
-  return Math.floor(value);
+  return Math.max(1, Math.floor(value));
 }
 
 function parseIsoDate(value: string | null | undefined): Date | null {
@@ -140,6 +142,9 @@ function selectRecentUpdatedTaskCards(
 }
 
 export async function runCommand(
+  options: {
+    cwd?: string;
+  } = {},
   dependencies: {
     githubClient?: GitHubSignalClient;
     maxPollCycles?: number;
@@ -151,223 +156,240 @@ export async function runCommand(
     }) => Promise<number | null>;
   } = {},
 ): Promise<void> {
-  const paths = getWorkspacePaths();
-  const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
-  const executeAgentSession =
-    dependencies.executeAgentSession ?? defaultExecuteAgentSession;
-
-  await ensureWorkspaceStructure(paths);
-  const config = await ensureConfig(paths);
-  let state = await ensureSessionState(paths, config.agentId);
-  let shouldStop = false;
-  let hasLoggedStop = false;
-  let completedPollCycles = 0;
-  const maxPollCycles = dependencies.maxPollCycles;
-  let interruptPollSleep: (() => void) | null = null;
-
-  const stopHandler = () => {
-    if (!hasLoggedStop) {
-      console.log('Stopping...');
-      hasLoggedStop = true;
-    }
-    shouldStop = true;
-    if (interruptPollSleep !== null) {
-      interruptPollSleep();
-      interruptPollSleep = null;
-    }
-  };
-
   try {
-    await acquireLock(paths.lockFile, paths.root);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.startsWith('gh-agent is already running with pid ')
-    ) {
-      throw Object.assign(error, { exitCode: 4 });
+    const workspaceRoot = await findWorkspaceRoot(options.cwd);
+    const paths = getWorkspacePaths(workspaceRoot);
+    const githubClient =
+      dependencies.githubClient ?? createGitHubSignalClient();
+    const executeAgentSession =
+      dependencies.executeAgentSession ?? defaultExecuteAgentSession;
+
+    await ensureWorkspaceStructure(paths);
+    const config = await ensureConfig(paths);
+    let state = await ensureSessionState(paths, config.agentId);
+    let shouldStop = false;
+    let hasLoggedStop = false;
+    let completedPollCycles = 0;
+    const maxPollCycles = dependencies.maxPollCycles;
+    let interruptPollSleep: (() => void) | null = null;
+
+    const stopHandler = () => {
+      if (!hasLoggedStop) {
+        console.log('Stopping...');
+        hasLoggedStop = true;
+      }
+      shouldStop = true;
+      if (interruptPollSleep !== null) {
+        interruptPollSleep();
+        interruptPollSleep = null;
+      }
+    };
+
+    try {
+      await acquireLock(paths.lockFile, paths.root);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('gh-agent is already running with pid ')
+      ) {
+        throw Object.assign(error, { exitCode: 4 });
+      }
+
+      throw error;
     }
 
-    throw error;
-  }
+    try {
+      process.on('SIGINT', stopHandler);
+      process.on('SIGTERM', stopHandler);
 
-  try {
-    process.on('SIGINT', stopHandler);
-    process.on('SIGTERM', stopHandler);
+      while (!shouldStop) {
+        const now = new Date();
+        const previousAgentMode = state.currentMode;
+        const signals = await githubClient.getSignalSummary(paths, config);
+        state = recordNotificationPoll(state, now);
+        await saveSessionState(paths, state);
 
-    while (!shouldStop) {
-      const now = new Date();
-      const previousAgentMode = state.currentMode;
-      const signals = await githubClient.getSignalSummary(paths, config);
-      state = recordNotificationPoll(state, now);
-      await saveSessionState(paths, state);
+        const wakeDecision = evaluateWakeDecision(state, signals, now);
+        let createdSessionId: string | null = null;
+        let selectedAgentClass: 'default' | 'heavy' | null = null;
+        let executedAgentClass: 'default' | 'heavy' | null = null;
+        let agentCommand: string | null = null;
+        let sessionExitCode: number | null = null;
 
-      const wakeDecision = evaluateWakeDecision(state, signals, now);
-      let createdSessionId: string | null = null;
-      let selectedAgentClass: 'default' | 'heavy' | null = null;
-      let executedAgentClass: 'default' | 'heavy' | null = null;
-      let agentCommand: string | null = null;
-      let sessionExitCode: number | null = null;
-
-      console.log(
-        `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
-      );
-
-      if (wakeDecision.shouldWake) {
-        const mailboxForSelection = await githubClient.listMailboxNotifications(
-          paths,
-          { limit: 1 },
-        );
-        const actionableTasks = await githubClient.listTaskCards(
-          paths,
-          config,
-          {
-            statuses: ['ready', 'doing'],
-          },
-        );
-        selectedAgentClass = selectAgentClass(
-          mailboxForSelection.length,
-          actionableTasks,
-        );
-        const execution = resolveAgentExecution(config, selectedAgentClass);
-        executedAgentClass = execution.executedAgentClass;
-        agentCommand = execution.command;
-
-        console.log(`Selected agent: ${selectedAgentClass}`);
-        console.log(`Executing agent command class: ${executedAgentClass}`);
-
-        const sessionStartAt = new Date();
-        const sessionId = createSessionId(sessionStartAt);
-        const mailboxSampleLimit = normalizePromptSampleLimit(
-          config.promptMailboxSampleLimit,
-          PROMPT_MAILBOX_SAMPLE_LIMIT,
-        );
-        const taskSampleLimit = normalizePromptSampleLimit(
-          config.promptTaskSampleLimit,
-          PROMPT_TASK_SAMPLE_LIMIT,
-        );
-        const recentTaskCardLimit = normalizePromptSampleLimit(
-          config.promptRecentTaskCardLimit,
-          PROMPT_RECENT_TASK_CARD_LIMIT,
-        );
-        const mailboxSamples = await githubClient.listMailboxNotifications(
-          paths,
-          { limit: mailboxSampleLimit },
-        );
-        const allTaskCards = await githubClient.listTaskCards(
-          paths,
-          config,
-          {},
-        );
-        const recentUpdatedTaskCards = selectRecentUpdatedTaskCards(
-          allTaskCards,
-          recentTaskCardLimit,
+        console.log(
+          `Signals: unread=${signals.unreadCount} actionable=${signals.actionableCount} shouldWake=${wakeDecision.shouldWake}`,
         );
 
-        const prompt = buildRichSessionPrompt({
-          sessionId,
-          wakeReason: wakeDecision.reason,
+        if (wakeDecision.shouldWake) {
+          const mailboxForSelection =
+            await githubClient.listMailboxNotifications(paths, {
+              limit: 1,
+            });
+          const actionableTasks = await githubClient.listTaskCards(
+            paths,
+            config,
+            {
+              statuses: ['ready', 'doing'],
+            },
+          );
+          selectedAgentClass = selectAgentClass(
+            mailboxForSelection.length,
+            actionableTasks,
+          );
+          const execution = resolveAgentExecution(config, selectedAgentClass);
+          executedAgentClass = execution.executedAgentClass;
+          agentCommand = execution.command;
+
+          console.log(`Selected agent: ${selectedAgentClass}`);
+          console.log(`Executing agent command class: ${executedAgentClass}`);
+
+          const sessionStartAt = new Date();
+          const sessionId = createSessionId(sessionStartAt);
+          const mailboxSampleLimit = normalizePromptSampleLimit(
+            config.promptMailboxSampleLimit,
+            PROMPT_MAILBOX_SAMPLE_LIMIT,
+          );
+          const taskSampleLimit = normalizePromptSampleLimit(
+            config.promptTaskSampleLimit,
+            PROMPT_TASK_SAMPLE_LIMIT,
+          );
+          const recentTaskCardLimit = normalizePromptSampleLimit(
+            config.promptRecentTaskCardLimit,
+            PROMPT_RECENT_TASK_CARD_LIMIT,
+          );
+          const mailboxSamples = await githubClient.listMailboxNotifications(
+            paths,
+            { limit: mailboxSampleLimit },
+          );
+          const allTaskCards = await githubClient.listTaskCards(
+            paths,
+            config,
+            {},
+          );
+          const recentUpdatedTaskCards = selectRecentUpdatedTaskCards(
+            allTaskCards,
+            recentTaskCardLimit,
+          );
+
+          const prompt = buildRichSessionPrompt({
+            sessionId,
+            wakeReason: wakeDecision.reason,
+            triggerKind: wakeDecision.triggerKind,
+            selectedAgentClass,
+            executedAgentClass,
+            unreadCount: signals.unreadCount,
+            actionableCount: signals.actionableCount,
+            mailboxSamples: mailboxSamples.map((sample) => ({
+              id: sample.id,
+              repositoryFullName: sample.repositoryFullName,
+              title: sample.title,
+              reason: sample.reason,
+            })),
+            actionableTaskSamples: actionableTasks
+              .slice(0, taskSampleLimit)
+              .map((task) => ({
+                id: task.id,
+                status: task.status,
+                executionClass: task.executionClass,
+                title: task.title,
+                sourceLink: task.sourceLink,
+                nextAction: task.nextAction ?? null,
+                shortNote: task.shortNote ?? null,
+              })),
+            recentUpdatedTaskCards,
+            mailboxSampleLimit,
+            taskSampleLimit,
+            recentTaskCardLimit,
+          });
+
+          state = startSession(state, sessionId, sessionStartAt);
+          await saveSessionState(paths, state);
+          console.log(`Session started: ${sessionId}`);
+          createdSessionId = sessionId;
+
+          try {
+            sessionExitCode = await executeAgentSession({
+              command: execution.command,
+              prompt,
+              cwd: paths.root,
+              env: createSessionEnvironment({
+                prompt,
+                ghConfigDir: paths.ghConfigDir,
+                gitConfigGlobalFile: paths.gitConfigGlobalFile,
+              }),
+            });
+            console.log(
+              `Session command exited with code ${sessionExitCode ?? 'null'}`,
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            console.log(`Session command failed: ${message}`);
+            sessionExitCode = null;
+          } finally {
+            const sessionEndAt = new Date();
+            state = finishSession(state, config, sessionEndAt);
+            await saveSessionState(paths, state);
+            console.log('Session ended');
+          }
+        }
+
+        await saveSessionState(paths, state);
+        await appendWakeDecision(paths, {
+          evaluatedAt: now.toISOString(),
+          previousAgentMode,
+          unreadNotificationCount: signals.unreadCount,
+          actionableCardCount: signals.actionableCount,
+          shouldWake: wakeDecision.shouldWake,
+          blockedByCooldown: wakeDecision.blockedByCooldown,
+          reason: wakeDecision.reason,
           triggerKind: wakeDecision.triggerKind,
+          createdSessionId,
           selectedAgentClass,
           executedAgentClass,
-          unreadCount: signals.unreadCount,
-          actionableCount: signals.actionableCount,
-          mailboxSamples: mailboxSamples.map((sample) => ({
-            id: sample.id,
-            repositoryFullName: sample.repositoryFullName,
-            title: sample.title,
-            reason: sample.reason,
-          })),
-          actionableTaskSamples: actionableTasks
-            .slice(0, taskSampleLimit)
-            .map((task) => ({
-              id: task.id,
-              status: task.status,
-              executionClass: task.executionClass,
-              title: task.title,
-              sourceLink: task.sourceLink,
-              nextAction: task.nextAction ?? null,
-              shortNote: task.shortNote ?? null,
-            })),
-          recentUpdatedTaskCards,
-          mailboxSampleLimit,
-          taskSampleLimit,
-          recentTaskCardLimit,
+          agentCommand,
+          sessionExitCode,
         });
 
-        state = startSession(state, sessionId, sessionStartAt);
-        await saveSessionState(paths, state);
-        console.log(`Session started: ${sessionId}`);
-        createdSessionId = sessionId;
-
-        try {
-          sessionExitCode = await executeAgentSession({
-            command: execution.command,
-            prompt,
-            cwd: paths.root,
-            env: createSessionEnvironment({
-              prompt,
-              ghConfigDir: paths.ghConfigDir,
-              gitConfigGlobalFile: paths.gitConfigGlobalFile,
-            }),
-          });
-          console.log(
-            `Session command exited with code ${sessionExitCode ?? 'null'}`,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          console.log(`Session command failed: ${message}`);
-          sessionExitCode = null;
-        } finally {
-          const sessionEndAt = new Date();
-          state = finishSession(state, config, sessionEndAt);
-          await saveSessionState(paths, state);
-          console.log('Session ended');
+        completedPollCycles += 1;
+        if (
+          typeof maxPollCycles === 'number' &&
+          completedPollCycles >= maxPollCycles
+        ) {
+          break;
         }
+
+        if (shouldStop) {
+          break;
+        }
+
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            interruptPollSleep = null;
+            resolve();
+          }, config.pollIntervalMs);
+
+          interruptPollSleep = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
       }
-
-      await saveSessionState(paths, state);
-      await appendWakeDecision(paths, {
-        evaluatedAt: now.toISOString(),
-        previousAgentMode,
-        unreadNotificationCount: signals.unreadCount,
-        actionableCardCount: signals.actionableCount,
-        shouldWake: wakeDecision.shouldWake,
-        blockedByCooldown: wakeDecision.blockedByCooldown,
-        reason: wakeDecision.reason,
-        triggerKind: wakeDecision.triggerKind,
-        createdSessionId,
-        selectedAgentClass,
-        executedAgentClass,
-        agentCommand,
-        sessionExitCode,
-      });
-
-      completedPollCycles += 1;
-      if (
-        typeof maxPollCycles === 'number' &&
-        completedPollCycles >= maxPollCycles
-      ) {
-        break;
-      }
-
-      if (shouldStop) {
-        break;
-      }
-
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          interruptPollSleep = null;
-          resolve();
-        }, config.pollIntervalMs);
-
-        interruptPollSleep = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-      });
+    } finally {
+      process.off('SIGINT', stopHandler);
+      process.off('SIGTERM', stopHandler);
+      await releaseLock(paths.lockFile);
     }
   } catch (error) {
+    if (error instanceof WorkspaceNotFoundError) {
+      throw Object.assign(
+        new Error(
+          'No gh-agent workspace found in the current directory or its parent directories.',
+        ),
+        { exitCode: 2 },
+      );
+    }
+
     if (error instanceof GitHubAuthError) {
       throw Object.assign(
         new Error(`GitHub authentication error: ${error.message}`),
@@ -380,9 +402,5 @@ export async function runCommand(
     }
 
     throw error;
-  } finally {
-    process.off('SIGINT', stopHandler);
-    process.off('SIGTERM', stopHandler);
-    await releaseLock(paths.lockFile);
   }
 }
