@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const cacheDir = path.resolve('.npm-cache');
+const cacheDir = path.resolve('.cache/npm');
 mkdirSync(cacheDir, { recursive: true });
 
 const result = spawnSync('npm', ['pack', '--dry-run'], {
