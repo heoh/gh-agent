@@ -11,6 +11,8 @@ returning contributors can open a PR with minimal friction.
 node -v
 ```
 
+Local minimum is Node `>=20`; CI currently runs Node `24`.
+
 2. Install dependencies from the repository root:
 
 ```bash
@@ -91,5 +93,7 @@ npm test
 npm run test:coverage
 npm run build
 npm run ci:verify
-npm run release:check
 ```
+
+For release-specific checks and publication flow, see
+`docs/release/npm-release.md`.

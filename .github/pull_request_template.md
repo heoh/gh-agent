@@ -8,16 +8,11 @@
 
 ## Tests
 
-- [ ] `npm run format:check`
-- [ ] `npm run lint`
-- [ ] `npm run typecheck`
-- [ ] `npm test`
-- [ ] `npm run test:coverage`
-- [ ] `npm run build`
-- [ ] `npm run ci:verify`
+- [ ] Docs-only changes: `npm run format:check`
+- [ ] Code, test, or config behavior changes: `npm run ci:verify`
 - [ ] Not run
 
-<!-- List the checks you ran and explain any checks you skipped. -->
+<!-- List the commands you ran and explain any checks you skipped. -->
 
 ## Risks
 
