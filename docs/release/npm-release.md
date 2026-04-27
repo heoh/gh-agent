@@ -40,13 +40,34 @@ Confirm these before the first public npm publication:
 
 ## GitHub npm publication
 
+### Prepare a release PR
+
+For a new npm version, first run the manual `Prepare release PR` workflow from
+the `main` branch. Enter the target SemVer value, such as `0.2.0`.
+
+The workflow does not publish to npm and does not push directly to `main`.
+Instead, it:
+
+- Validates that the requested version is SemVer, differs from the current
+  `package.json#version`, and is not already published on npm.
+- Runs `npm version --no-git-tag-version <version>` so `package.json` and
+  `package-lock.json` are updated together.
+- Runs `npm run release:check`.
+- Pushes a release branch named `gh-agent/prepare-release-v<version>`.
+- Opens or updates a PR titled `Prepare release <version>`.
+
+Review and merge that generated PR before publishing. This keeps the version
+change in the normal GitHub review history.
+
+### Publish the reviewed version
+
 Maintainers can publish from GitHub Actions with the manual `Publish package to
 npm` workflow. Run it from the `main` branch and enter the exact version already
 committed in `package.json`, such as `0.1.0`.
 
 The workflow intentionally does not edit `package.json`, create commits, create
-tags, or publish from release events. Version bumps should happen in a reviewed
-PR first; the manual workflow only validates and publishes the version that is
+tags, or publish from release events. Version bumps happen in a reviewed PR
+first; the manual workflow only validates and publishes the version that is
 already on `main`.
 
 The workflow guards the publish step by:
