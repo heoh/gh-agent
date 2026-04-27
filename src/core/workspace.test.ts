@@ -26,10 +26,12 @@ describe('workspace normalization', () => {
 
     const config = await ensureConfig(paths);
     const state = await ensureSessionState(paths, config.agentId);
+    const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(paths.configFile).toBe(
       `${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
+    expect(stateGitignore).toBe('*\n!config.json\n');
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:

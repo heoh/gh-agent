@@ -339,6 +339,7 @@ describe('commands', () => {
       unknown
     >;
     const gitConfig = await readFile(paths.gitConfigGlobalFile, 'utf8');
+    const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.defaultAgentCommand).toBe(
@@ -353,6 +354,7 @@ describe('commands', () => {
     expect(gitConfig).toContain(
       'email = 123+test-user@users.noreply.github.com',
     );
+    expect(stateGitignore).toBe('*\n!config.json\n');
     expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');

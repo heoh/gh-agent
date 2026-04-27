@@ -23,6 +23,7 @@ export interface WorkspacePaths {
   root: string;
   agentsFile: string;
   configFile: string;
+  stateGitignoreFile: string;
   stateDir: string;
   stateFile: string;
   sessionNotesDir: string;
@@ -93,6 +94,7 @@ export function getWorkspacePaths(root = process.cwd()): WorkspacePaths {
     root,
     agentsFile: path.join(root, 'AGENTS.md'),
     configFile: path.join(stateDir, 'config.json'),
+    stateGitignoreFile: path.join(stateDir, '.gitignore'),
     stateDir,
     stateFile: path.join(stateDir, 'session_state.json'),
     sessionNotesDir: path.join(stateDir, 'session_notes'),
@@ -338,6 +340,9 @@ export async function ensureWorkspaceStructure(
   await mkdir(paths.sessionNotesDir, { recursive: true });
   await mkdir(paths.ghConfigDir, { recursive: true });
   await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
+  if (!(await pathExists(paths.stateGitignoreFile))) {
+    await writeFile(paths.stateGitignoreFile, '*\n!config.json\n', 'utf8');
+  }
 }
 
 export async function ensureAgentsGuide(
