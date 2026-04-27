@@ -284,6 +284,7 @@ function createGitHubClientStub(
     },
     async getGitIdentity() {
       return {
+        login: 'test-user',
         name: 'Test User',
         email: '123+test-user@users.noreply.github.com',
       };

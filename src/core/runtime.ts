@@ -221,6 +221,8 @@ function formatRecentUpdatedTaskCards(
 }
 
 export function buildRichSessionPrompt(input: {
+  githubUsername: string;
+  githubName: string;
   sessionId: string;
   wakeReason: string;
   triggerKind: WakeDecision['triggerKind'];
@@ -258,10 +260,12 @@ export function buildRichSessionPrompt(input: {
   recentTaskCardLimit: number;
 }): string {
   return [
-    '당신은 gh-agent 세션을 수행하는 실행 에이전트다.',
+    `당신은 GitHub에서 세션 루틴을 수행하는 @${input.githubUsername} 이다.`,
     '',
     '[세션 루틴]',
     '1) mailbox triage -> 2) actionable task 처리 -> 3) 새 mailbox 재확인',
+    '- 3)에서 mailbox에 새 항목이 있으면 1)로 돌아가 루틴을 반복한다.',
+    '- 새 항목이 없으면 현재 세션 루틴을 종료한다.',
     '',
     '[gh-agent 핵심 명령 가이드]',
     '- mailbox: gh-agent mailbox list | show <threadId> | promote <threadId...> | ignore <threadId...>',
@@ -278,6 +282,8 @@ export function buildRichSessionPrompt(input: {
     '- work/ 포함 로컬 파일시스템을 실행 공간으로 적극 활용한다.',
     '',
     '[현재 세션 컨텍스트]',
+    `- githubUsername: @${input.githubUsername}`,
+    `- githubName: ${input.githubName}`,
     `- sessionId: ${input.sessionId}`,
     `- wakeReason: ${input.wakeReason}`,
     `- triggerKind: ${input.triggerKind}`,

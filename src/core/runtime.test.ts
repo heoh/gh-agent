@@ -265,6 +265,8 @@ describe('agent selection and prompt', () => {
 
   it('builds a rich prompt with operation guidance and dynamic context', () => {
     const prompt = buildRichSessionPrompt({
+      githubUsername: 'test-user',
+      githubName: 'Test User',
       sessionId: 'sess_123',
       wakeReason: 'wake triggered by unread',
       triggerKind: 'unread',
@@ -308,10 +310,14 @@ describe('agent selection and prompt', () => {
       recentTaskCardLimit: 3,
     });
 
+    expect(prompt).toContain('GitHub에서 세션 루틴을 수행하는 @test-user 이다.');
     expect(prompt).toContain('mailbox triage -> 2) actionable task 처리');
     expect(prompt).toContain('gh-agent mailbox list');
+    expect(prompt).toContain('당신은 GitHub에서 세션 루틴을 수행하는 @test-user 이다.');
     expect(prompt).toContain('gh CLI를 사용해 이슈/PR 코멘트');
     expect(prompt).toContain('work/ 포함 로컬 파일시스템');
+    expect(prompt).toContain('githubUsername: @test-user');
+    expect(prompt).toContain('githubName: Test User');
     expect(prompt).toContain('sessionId: sess_123');
     expect(prompt).toContain('thread_1 | acme/widgets');
     expect(prompt).toContain('item_1 | ready | class=light');

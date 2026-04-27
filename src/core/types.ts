@@ -245,6 +245,7 @@ export interface GitHubAuthStatus {
 }
 
 export interface GitIdentity {
+  login: string;
   name: string;
   email: string;
 }

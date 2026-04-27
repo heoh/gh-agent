@@ -190,6 +190,7 @@ class DefaultGhAuthClient implements GhAuthClient {
           : `${login}@users.noreply.github.com`;
 
     return {
+      login,
       name,
       email,
     };
