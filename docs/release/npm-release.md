@@ -20,13 +20,18 @@ release-readiness gate used both locally and in CI.
 Current `ci:verify` order:
 
 1. format check
-2. README verification
-3. lint
-4. typecheck
-5. tests
-6. coverage
-7. build
-8. `npm pack --dry-run`
+2. lint
+3. typecheck
+4. tests
+5. coverage
+6. build
+7. `npm pack --dry-run`
+
+For docs-only validation, run:
+
+```bash
+npm run format:check
+```
 
 Lifecycle guards in `package.json`:
 
@@ -36,11 +41,6 @@ Lifecycle guards in `package.json`:
 ## Failure handling
 
 If `release:check` fails, stop and fix before opening/merging a release PR.
-
-### `verify:readme` failure
-
-- Add missing required sections to `README.md`
-- Re-run `npm run verify:readme`, then `npm run ci:verify`
 
 ### `format/lint/typecheck/test/coverage` failure
 
