@@ -87,6 +87,7 @@ If you need to run checks individually, these scripts are available:
 
 ```bash
 npm run format:check
+npm run verify:readme
 npm run lint
 npm run typecheck
 npm test
