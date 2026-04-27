@@ -233,9 +233,11 @@ class OctokitGitHubApiClient implements GitHubApiClient {
           (response as { data?: unknown }).data === null ||
           (response as { data?: unknown }).data === undefined)
       ) {
-        const firstError = (response as {
-          errors: Array<{ message?: unknown }>;
-        }).errors[0];
+        const firstError = (
+          response as {
+            errors: Array<{ message?: unknown }>;
+          }
+        ).errors[0];
         const errorMessage =
           typeof firstError?.message === 'string' &&
           firstError.message.length > 0
