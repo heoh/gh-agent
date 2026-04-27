@@ -43,7 +43,7 @@
     "type": "git",
     "url": "https://github.com/heoh/gh-agent.git"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "commander": "^13.1.0",
     "octokit": "^5.0.5"

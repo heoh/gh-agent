@@ -142,4 +142,4 @@ npm run build
 
 ## License
 
-MIT
+Apache-2.0
