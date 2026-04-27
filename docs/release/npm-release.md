@@ -38,18 +38,55 @@ Confirm these before the first public npm publication:
 - Positioning: `TypeScript-based CLI package for gh-agent.` is the current npm
   description. Confirm the public README and npm description before publication.
 
-## Future GitHub release automation
+## GitHub npm publication
 
-Manual workflow or release-tag based publishing should call the same
-`npm run release:check` path before `npm publish`. Keep that automation in a
-separate PR so the first step remains reviewable: define and verify the package
-that would be published.
+Maintainers can publish from GitHub Actions with the manual `Publish package to
+npm` workflow. Run it from the `main` branch and enter the exact version already
+committed in `package.json`.
 
-Recommended follow-up options:
+The workflow intentionally does not edit `package.json`, create commits, create
+tags, or publish from release events. Version bumps should happen in a reviewed
+PR first; the manual workflow only validates and publishes the version that is
+already on `main`.
 
-- Manual workflow: `workflow_dispatch` accepts a version input, validates the
-  working tree, runs `npm version`, runs `npm run release:check`, and publishes.
-- Tag workflow: a `vX.Y.Z` tag or GitHub Release triggers validation that the tag
-  matches `package.json`, then runs `npm run release:check` and publishes.
-- Combined workflow: support both entry points, with a guard that prevents
-  publishing the same package version twice.
+The workflow guards the publish step by:
+
+- Failing unless the selected workflow ref is `main`.
+- Failing unless the `workflow_dispatch` version input equals
+  `package.json#version`.
+- Failing if `npm view <package>@<version>` finds that the package version is
+  already published.
+- Running `npm run release:check` before `npm publish`.
+
+### npm trusted publishing setup
+
+Preferred authentication is npm trusted publishing, not a long-lived npm token.
+Configure the package on npmjs.com with this trusted publisher:
+
+- Publisher: GitHub Actions
+- Organization or user: `heoh`
+- Repository: `gh-agent`
+- Workflow filename: `npm-publish.yml`
+- Environment name: leave unset unless the workflow is later changed to use a
+  matching GitHub environment
+
+The workflow grants `id-token: write` and uses a GitHub-hosted runner with Node
+24 so npm can authenticate with OIDC during `npm publish`.
+
+### Token fallback
+
+If trusted publishing is unavailable for the first release, add an `NPM_TOKEN`
+repository secret and change the publish step to pass it as `NODE_AUTH_TOKEN`.
+Use `npm publish --provenance` for token-based publishing so the package still
+gets provenance metadata.
+
+```yaml
+- name: Publish to npm
+  run: npm publish --provenance
+  env:
+    NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+Keep tag or GitHub Release triggered publication as a separate follow-up. That
+flow needs additional decisions for version bump PRs, bump commits, tag ordering,
+and duplicate-publish recovery.
