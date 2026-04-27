@@ -19,7 +19,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "release:check": "npm run format:check && npm test && npm run build && npm pack --dry-run",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run release:check"
   },
   "keywords": [
     "cli",
