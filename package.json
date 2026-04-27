@@ -24,7 +24,8 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "ci:verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run build && npm pack --dry-run",
+    "pack:dry-run": "node ./scripts/npm-pack-dry-run.mjs",
+    "ci:verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run build && npm run pack:dry-run",
     "release:check": "npm run ci:verify",
     "prepack": "npm run build",
     "prepublishOnly": "npm run release:check"
