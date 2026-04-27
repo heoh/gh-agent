@@ -2,7 +2,6 @@ import {
   createGitHubSignalClient,
   GitHubAuthError,
   GitHubConfigError,
-  GitHubRuntimeError,
 } from '../../core/github.js';
 import type {
   GitHubSignalClient,

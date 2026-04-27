@@ -74,8 +74,8 @@ jobs:
       - name: Update package version
         run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
 
-      - name: Check release package
-        run: npm run release:check
+      - name: Run CI verification gate
+        run: npm run ci:verify
 
       - name: Create or update release PR
         env:
@@ -115,7 +115,7 @@ jobs:
           The prepare workflow ran:
 
           - npm ci
-          - npm run release:check
+          - npm run ci:verify
 
           ## Release sequence
 
