@@ -147,6 +147,14 @@ export function createInitialSessionState(
   };
 }
 
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.floor(value));
+}
+
 function normalizeConfig(raw: unknown): Config {
   const record = raw as Partial<Config>;
   const projectFieldIds = record.projectFieldIds as
@@ -187,24 +195,18 @@ function normalizeConfig(raw: unknown): Config {
       record.debounceMs >= 0
         ? record.debounceMs
         : DEFAULT_CONFIG.debounceMs,
-    promptMailboxSampleLimit:
-      typeof record.promptMailboxSampleLimit === 'number' &&
-      Number.isFinite(record.promptMailboxSampleLimit) &&
-      record.promptMailboxSampleLimit > 0
-        ? Math.floor(record.promptMailboxSampleLimit)
-        : DEFAULT_CONFIG.promptMailboxSampleLimit,
-    promptTaskSampleLimit:
-      typeof record.promptTaskSampleLimit === 'number' &&
-      Number.isFinite(record.promptTaskSampleLimit) &&
-      record.promptTaskSampleLimit > 0
-        ? Math.floor(record.promptTaskSampleLimit)
-        : DEFAULT_CONFIG.promptTaskSampleLimit,
-    promptRecentTaskCardLimit:
-      typeof record.promptRecentTaskCardLimit === 'number' &&
-      Number.isFinite(record.promptRecentTaskCardLimit) &&
-      record.promptRecentTaskCardLimit > 0
-        ? Math.floor(record.promptRecentTaskCardLimit)
-        : DEFAULT_CONFIG.promptRecentTaskCardLimit,
+    promptMailboxSampleLimit: normalizePositiveInteger(
+      record.promptMailboxSampleLimit,
+      DEFAULT_CONFIG.promptMailboxSampleLimit,
+    ),
+    promptTaskSampleLimit: normalizePositiveInteger(
+      record.promptTaskSampleLimit,
+      DEFAULT_CONFIG.promptTaskSampleLimit,
+    ),
+    promptRecentTaskCardLimit: normalizePositiveInteger(
+      record.promptRecentTaskCardLimit,
+      DEFAULT_CONFIG.promptRecentTaskCardLimit,
+    ),
     projectId: typeof record.projectId === 'string' ? record.projectId : null,
     projectTitle:
       typeof record.projectTitle === 'string' ? record.projectTitle : null,
