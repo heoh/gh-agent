@@ -14,13 +14,18 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "release:check": "npm run format:check && npm test && npm run build && npm pack --dry-run",
+    "ci:verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:coverage && npm run build && npm pack --dry-run",
+    "release:check": "npm run ci:verify",
     "prepack": "npm run build",
     "prepublishOnly": "npm run release:check"
   },
@@ -43,10 +48,15 @@
     "octokit": "^5.0.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.15.3",
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
     "prettier": "^3.5.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.2"
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^4.1.5"
   }
 }

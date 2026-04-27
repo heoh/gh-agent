@@ -15,7 +15,10 @@ vi.mock('node:child_process', () => ({
 }));
 
 vi.mock('octokit', () => ({
-  Octokit: vi.fn().mockImplementation((options: { auth: string }) => {
+  Octokit: vi.fn(function octokitMock(
+    this: unknown,
+    options: { auth: string },
+  ) {
     octokitConstructorMock(options);
 
     return {

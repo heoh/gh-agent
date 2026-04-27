@@ -220,7 +220,12 @@ function createGitHubClientStub(
 
           return true;
         })
-        .map(({ projectId: _projectId, ...task }) => task);
+        .map((task) => {
+          const { projectId, ...taskWithoutProjectId } = task;
+          void projectId;
+
+          return taskWithoutProjectId;
+        });
     },
     async getTaskCard(_paths, config, taskId) {
       expect(config.projectId).toBe('proj_123');

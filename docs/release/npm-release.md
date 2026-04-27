@@ -13,8 +13,9 @@ npm run release:check
 ```
 
 `npm run release:check` is the single local and CI release-readiness path. It
-runs formatting checks, tests, a TypeScript build, and `npm pack --dry-run` so the
-tarball contents can be inspected before publication.
+delegates to `npm run ci:verify`, which runs formatting checks, lint, typecheck,
+tests, coverage, a TypeScript build, and `npm pack --dry-run` so the tarball
+contents can be inspected before publication.
 
 The package also defines lifecycle guards:
 
@@ -24,6 +25,12 @@ The package also defines lifecycle guards:
 These guards reduce the risk of publishing stale local build output, but
 maintainers should still use `npm run release:check` as the explicit review
 command because it prints the dry-run package manifest.
+
+For routine implementation PRs, use the same gate locally:
+
+```bash
+npm run ci:verify
+```
 
 ## Publication decisions still owned by maintainers
 
@@ -52,7 +59,7 @@ Instead, it:
   `package.json#version`, and is not already published on npm.
 - Runs `npm version --no-git-tag-version <version>` so `package.json` and
   `package-lock.json` are updated together.
-- Runs `npm run release:check`.
+- Runs `npm run ci:verify`.
 - Pushes a release branch named `gh-agent/prepare-release-v<version>`.
 - Opens or updates a PR titled `Prepare release <version>`.
 
@@ -77,7 +84,7 @@ The workflow guards the publish step by:
   `package.json#version`.
 - Failing if `npm view <package>@<version>` finds that the package version is
   already published.
-- Running `npm run release:check` before `npm publish`.
+- Running `npm run ci:verify` before `npm publish`.
 
 ### npm trusted publishing setup
 

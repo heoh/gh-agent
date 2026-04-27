@@ -9,7 +9,6 @@ import type {
   TaskCard,
   TaskCreateInput,
   TaskExecutionClass,
-  TaskListFilters,
   TaskListItem,
   TaskPriority,
   TaskStatus,
