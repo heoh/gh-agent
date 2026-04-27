@@ -42,7 +42,7 @@ Confirm these before the first public npm publication:
 
 Maintainers can publish from GitHub Actions with the manual `Publish package to
 npm` workflow. Run it from the `main` branch and enter the exact version already
-committed in `package.json`.
+committed in `package.json`, such as `0.1.0`.
 
 The workflow intentionally does not edit `package.json`, create commits, create
 tags, or publish from release events. Version bumps should happen in a reviewed
