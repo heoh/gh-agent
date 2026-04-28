@@ -356,7 +356,7 @@ describe('commands', () => {
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.defaultAgentCommand).toBe(
-      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     );
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
@@ -482,6 +482,8 @@ describe('commands', () => {
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
+    expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
+    expect(executeInput.env.prompt).toBe(executeInput.prompt);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
     expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);
     expect(await readLockInfo(paths.lockFile)).toBeNull();
@@ -520,7 +522,51 @@ describe('commands', () => {
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     expect(executeInput.cwd).toBe(getWorkspaceRoot());
+    expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
+    expect(executeInput.env.prompt).toBe(executeInput.prompt);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
+  });
+
+  it('runCommand keeps legacy $prompt-based commands working while exposing GH_AGENT_PROMPT', async () => {
+    let executeInput: SessionExecuteInput = {
+      command: '',
+      prompt: '',
+      cwd: '',
+      env: {},
+    };
+
+    await initCommand({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        ...(JSON.parse(await readFile(paths.configFile, 'utf8')) as Record<
+          string,
+          unknown
+        >),
+        defaultAgentCommand: 'my-agent --headless "$prompt"',
+      }),
+      'utf8',
+    );
+
+    await runCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(1, 0),
+        maxPollCycles: 1,
+        async executeAgentSession(input) {
+          executeInput = input;
+          return 0;
+        },
+      },
+    );
+
+    expect(executeInput.command).toBe('my-agent --headless "$prompt"');
+    expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
+    expect(executeInput.env.prompt).toBe(executeInput.prompt);
   });
 
   it('runCommand respects cooldown and still releases the lock', async () => {

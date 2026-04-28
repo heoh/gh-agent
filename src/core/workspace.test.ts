@@ -35,7 +35,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:
-        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -100,7 +100,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'custom-agent',
       defaultAgentCommand:
-        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -142,7 +142,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:
-        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
