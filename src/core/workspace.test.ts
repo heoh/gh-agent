@@ -270,7 +270,7 @@ describe('workspace normalization', () => {
     const firstContent = await readFile(paths.agentsFile, 'utf8');
     expect(first.created).toBe(true);
     expect(firstContent).toContain('# AGENTS.md');
-    expect(firstContent).toContain('## 기본 역할');
+    expect(firstContent).toContain('## Core Role');
 
     await writeFile(paths.agentsFile, 'custom-agents', 'utf8');
     const second = await ensureAgentsGuide(paths);

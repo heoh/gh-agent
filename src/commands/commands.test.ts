@@ -379,7 +379,7 @@ describe('commands', () => {
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
     const agentsFile = await readFile(paths.agentsFile, 'utf8');
     expect(agentsFile).toContain('# AGENTS.md');
-    expect(agentsFile).toContain('## 기본 역할');
+    expect(agentsFile).toContain('## Core Role');
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {

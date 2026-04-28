@@ -326,7 +326,7 @@ describe('agent selection and prompt', () => {
     expect(prompt).toContain('[Do-Now Priority]');
     expect(prompt).toContain('[Hard Constraints]');
     expect(prompt).toContain('[Untrusted Context(JSON)]');
-    expect(prompt).toContain('종료 조건');
+    expect(prompt).toContain('Exit condition');
     expect(prompt).toContain('@test-user');
 
     const payload = parseUntrustedContextJson(prompt);
