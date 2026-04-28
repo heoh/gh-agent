@@ -61,6 +61,8 @@ Preset notes:
 
 - Presets are command-template helpers, not deep integrations.
 - Each CLI must already be installed and authenticated.
+- Agent sessions receive `GH_AGENT_HOME` pointing at the workspace root, so
+  custom commands can anchor config or helper paths off that location.
 - `codex` defaults to workspace-write plus network access because GitHub work
   needs network-enabled execution.
 - `cursor` should be treated as beta.

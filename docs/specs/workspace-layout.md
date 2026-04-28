@@ -55,6 +55,7 @@ agent-workspace/
 - preset choice는 init 시 `defaultAgentCommand` 를 채우기 위한 UX이고, config에는 별도로 저장하지 않는다.
 - `defaultAgentCommand` 는 항상 문자열이어야 하며 MVP 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"` 다.
 - command의 prompt 부분은 시스템이 세션마다 동적으로 생성한 행동 가이드를 주입하는 자리다.
+- 런타임은 모든 agent session에 `GH_AGENT_HOME=<workspace root>` env를 제공한다.
 - `defaultAgentCommand` 는 반드시 `$prompt` placeholder를 포함해야 한다.
 - `heavyAgentCommand` 는 문자열 또는 `null` 이다.
 - heavy command가 `null` 인 경우, heavy 에이전트가 선택되어도 시스템은 기본 command로 폴백할 수 있다.
