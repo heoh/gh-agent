@@ -61,6 +61,13 @@ It monitors GitHub signals (notifications and project updates), and wakes only
 when there are unread messages or remaining tasks.
 When work is needed, it runs an agent session and then returns to waiting.
 
+Agent sessions receive:
+
+- `GH_AGENT_PROMPT`: the session-specific instruction payload injected by
+  `gh-agent`
+- `GH_AGENT_HOME`: the current gh-agent workspace root so commands can anchor
+  workspace-local paths without guessing relative depth
+
 ## Commands
 
 - User-facing: `gh-agent init`, `gh-agent run`, `gh-agent status`
