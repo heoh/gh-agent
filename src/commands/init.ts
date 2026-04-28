@@ -5,12 +5,12 @@ import {
   AGENT_PRESETS,
   AGENT_PROMPT_PLACEHOLDER,
   commandHasAgentPromptPlaceholder,
-  CUSTOM_AGENT_PRESET,
+  CUSTOM_AGENT_PRESET_ID,
   DEFAULT_AGENT_PRESET_ID,
   getAgentPresetDefinition,
   inferAgentPresetIdFromCommand,
   isAgentPresetId,
-  resolveAgentPresetSelection,
+  resolveAgentPresetCommand,
 } from '../core/agent-presets.js';
 import {
   ensureAgentsGuide,
@@ -87,7 +87,7 @@ async function promptForAgentPresetSelection(currentSelection: {
       throw new Error('Invalid preset selection.');
     }
 
-    if (preset.id !== CUSTOM_AGENT_PRESET.id) {
+    if (preset.id !== CUSTOM_AGENT_PRESET_ID) {
       return { presetId: preset.id };
     }
 
@@ -134,12 +134,15 @@ async function resolveInitialAgentSelection(input: {
       );
     }
 
-    const selection = resolveAgentPresetSelection({
+    const command = resolveAgentPresetCommand({
       presetId: explicitPreset,
       customCommand: explicitCustomCommand,
     });
-    validatePromptPlaceholder(selection.command);
-    return selection;
+    validatePromptPlaceholder(command);
+    return {
+      presetId: explicitPreset,
+      command,
+    };
   }
 
   if (explicitCustomCommand !== undefined && explicitCustomCommand.length > 0) {
@@ -167,12 +170,15 @@ async function resolveInitialAgentSelection(input: {
       presetId: DEFAULT_AGENT_PRESET_ID,
       command: input.existingCommand,
     });
-    const selection = resolveAgentPresetSelection({
+    const command = resolveAgentPresetCommand({
       presetId: promptedSelection.presetId,
       customCommand: promptedSelection.customCommand,
     });
-    validatePromptPlaceholder(selection.command);
-    return selection;
+    validatePromptPlaceholder(command);
+    return {
+      presetId: promptedSelection.presetId,
+      command,
+    };
   }
 
   return {
@@ -283,7 +289,7 @@ export async function initCommand(
     );
     console.log(`Default agent preset: ${preset.label}`);
     console.log(`Default agent command: ${updatedConfig.defaultAgentCommand}`);
-    if (preset.supportsIsolatedConfig && preset.configEnv !== null) {
+    if (preset.configEnv !== null) {
       console.log(
         `Preset config isolation: ${preset.configEnv} -> ${paths.root} (via GH_AGENT_HOME)`,
       );

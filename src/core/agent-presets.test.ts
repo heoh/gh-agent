@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   inferAgentPresetIdFromCommand,
-  resolveAgentPresetSelection,
+  resolveAgentPresetCommand,
   resolveAgentRuntimeEnvironment,
 } from './agent-presets.js';
 import type { Config } from './types.js';
@@ -61,7 +61,7 @@ describe('agent presets', () => {
 
   it('resolves a custom preset only when a command is supplied', () => {
     expect(() =>
-      resolveAgentPresetSelection({
+      resolveAgentPresetCommand({
         presetId: 'custom',
         customCommand: '',
       }),
