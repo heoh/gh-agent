@@ -124,7 +124,7 @@ export const AGENT_PRESETS: AgentPresetDefinition[] = [
   CUSTOM_AGENT_PRESET,
 ];
 
-export const DEFAULT_AGENT_PRESET_ID: BuiltInAgentPresetId = 'codex';
+export const DEFAULT_AGENT_PRESET_ID: BuiltInAgentPresetId = 'copilot';
 
 export function isAgentPresetId(value: unknown): value is AgentPresetId {
   return AGENT_PRESETS.some((preset) => preset.id === value);

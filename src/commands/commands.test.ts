@@ -355,9 +355,7 @@ describe('commands', () => {
     const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
-    expect(config.defaultAgentCommand).toBe(
-      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
-    );
+    expect(config.defaultAgentCommand).toBe('copilot -p "$GH_AGENT_PROMPT"');
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
     expect(config.promptRecentTaskCardLimit).toBe(5);
@@ -372,9 +370,9 @@ describe('commands', () => {
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
     expect(logs).toContain('AGENTS.md: created');
-    expect(logs).toContain('Default agent preset: OpenAI Codex CLI');
+    expect(logs).toContain('Default agent preset: GitHub Copilot CLI');
     expect(logs).toContain(
-      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
+      'Default agent command: copilot -p "$GH_AGENT_PROMPT"',
     );
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
@@ -441,9 +439,11 @@ describe('commands', () => {
     expect(logs).toContain(
       `Config: ${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
-    expect(logs).toContain('Default agent preset: codex (OpenAI Codex CLI)');
     expect(logs).toContain(
-      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
+      'Default agent preset: copilot (GitHub Copilot CLI)',
+    );
+    expect(logs).toContain(
+      'Default agent command: copilot -p "$GH_AGENT_PROMPT"',
     );
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Project: gh-agent');
@@ -528,7 +528,7 @@ describe('commands', () => {
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
-    expect(executeInput.env.CODEX_HOME).toBe(paths.root);
+    expect(executeInput.env.COPILOT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
     expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
