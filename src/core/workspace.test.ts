@@ -35,7 +35,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:
-        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -100,7 +100,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'custom-agent',
       defaultAgentCommand:
-        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -142,7 +142,7 @@ describe('workspace normalization', () => {
     expect(config).toEqual({
       agentId: 'gh-agent',
       defaultAgentCommand:
-        'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
       pollIntervalMs: 30_000,
       debounceMs: 60_000,
@@ -273,7 +273,7 @@ describe('workspace normalization', () => {
     const firstContent = await readFile(paths.agentsFile, 'utf8');
     expect(first.created).toBe(true);
     expect(firstContent).toContain('# AGENTS.md');
-    expect(firstContent).toContain('## 기본 역할');
+    expect(firstContent).toContain('## Core Role');
 
     await writeFile(paths.agentsFile, 'custom-agents', 'utf8');
     const second = await ensureAgentsGuide(paths);

@@ -172,6 +172,8 @@ export async function runCommand(
     let completedPollCycles = 0;
     const maxPollCycles = dependencies.maxPollCycles;
     let interruptPollSleep: (() => void) | null = null;
+    let githubUsername: string | null = null;
+    let githubName: string | null = null;
 
     const stopHandler = () => {
       if (!hasLoggedStop) {
@@ -270,8 +272,15 @@ export async function runCommand(
             allTaskCards,
             recentTaskCardLimit,
           );
+          if (githubUsername === null || githubName === null) {
+            const gitIdentity = await githubClient.getGitIdentity(paths);
+            githubUsername = gitIdentity.login;
+            githubName = gitIdentity.name;
+          }
 
           const prompt = buildRichSessionPrompt({
+            githubUsername: githubUsername,
+            githubName,
             sessionId,
             wakeReason: wakeDecision.reason,
             triggerKind: wakeDecision.triggerKind,

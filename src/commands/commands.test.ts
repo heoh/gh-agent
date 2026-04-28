@@ -49,6 +49,18 @@ import { taskUpdateCommand } from './task/update.js';
 
 const { getWorkspaceRoot } = setupWorkspaceTest();
 
+function parseUntrustedContextJson(prompt: string): Record<string, unknown> {
+  const match = prompt.match(
+    /\[Untrusted Context\(JSON\)\][\s\S]*?```json\n([\s\S]*?)\n```/,
+  );
+
+  if (!match) {
+    throw new Error('Untrusted context JSON block not found');
+  }
+
+  return JSON.parse(match[1]) as Record<string, unknown>;
+}
+
 function createTaskFixture(taskId: string) {
   return {
     id: taskId,
@@ -284,6 +296,7 @@ function createGitHubClientStub(
     },
     async getGitIdentity() {
       return {
+        login: 'test-user',
         name: 'Test User',
         email: '123+test-user@users.noreply.github.com',
       };
@@ -343,7 +356,7 @@ describe('commands', () => {
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.defaultAgentCommand).toBe(
-      'codex exec --dangerously-bypass-approvals-and-sandbox "$prompt"',
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
     );
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
@@ -366,7 +379,7 @@ describe('commands', () => {
     expect(logs).toContain('Next steps: gh-agent status, gh-agent run');
     const agentsFile = await readFile(paths.agentsFile, 'utf8');
     expect(agentsFile).toContain('# AGENTS.md');
-    expect(agentsFile).toContain('## 기본 역할');
+    expect(agentsFile).toContain('## Core Role');
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
@@ -624,10 +637,21 @@ describe('commands', () => {
     );
 
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('[mailbox 샘플 최대 1개]');
-    expect(prompts[0]).toContain('[actionable task 샘플 최대 1개]');
-    expect(prompts[0]).toContain('[recent updated task cards 최대 1개]');
-    expect(prompts[0]).toContain('item_2 | updatedAt=2026-04-21T10:00:00.000Z');
+    expect(prompts[0]).toContain('[Session Mission]');
+    expect(prompts[0]).toContain('[Untrusted Context(JSON)]');
+    const payload = parseUntrustedContextJson(prompts[0]);
+    expect(payload.sampleLimits).toMatchObject({
+      mailbox: 1,
+      actionableTasks: 1,
+      recentUpdatedTaskCards: 1,
+    });
+    const recentUpdatedTaskCards = payload.recentUpdatedTaskCards as Array<
+      Record<string, unknown>
+    >;
+    expect(recentUpdatedTaskCards[0]?.id).toBe('item_2');
+    expect(recentUpdatedTaskCards[0]?.updatedAt).toBe(
+      '2026-04-21T10:00:00.000Z',
+    );
     expect(prompts[0]).not.toContain('[recent session notes');
   });
 
