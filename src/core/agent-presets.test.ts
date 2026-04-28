@@ -11,7 +11,7 @@ function createConfig(overrides: Partial<Config> = {}): Config {
   return {
     agentId: 'gh-agent',
     defaultAgentCommand:
-      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     heavyAgentCommand: null,
     pollIntervalMs: 30_000,
     debounceMs: 60_000,
@@ -48,15 +48,15 @@ describe('agent presets', () => {
   it('infers codex from the built-in command template', () => {
     expect(
       inferAgentPresetIdFromCommand(
-        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
       ),
     ).toBe('codex');
   });
 
   it('marks unknown commands as custom', () => {
-    expect(inferAgentPresetIdFromCommand('my-agent --task "$prompt"')).toBe(
-      'custom',
-    );
+    expect(
+      inferAgentPresetIdFromCommand('my-agent --task "$GH_AGENT_PROMPT"'),
+    ).toBe('custom');
   });
 
   it('resolves a custom preset only when a command is supplied', () => {
@@ -72,7 +72,7 @@ describe('agent presets', () => {
     expect(
       resolveAgentRuntimeEnvironment({
         config: createConfig({
-          defaultAgentCommand: 'gemini -p "$prompt"',
+          defaultAgentCommand: 'gemini -p "$GH_AGENT_PROMPT"',
         }),
         paths: {
           root: '/tmp/workspace',
@@ -86,7 +86,7 @@ describe('agent presets', () => {
     expect(
       resolveAgentRuntimeEnvironment({
         config: createConfig({
-          defaultAgentCommand: 'claude -p "$prompt"',
+          defaultAgentCommand: 'claude -p "$GH_AGENT_PROMPT"',
         }),
         paths: {
           root: '/tmp/workspace',

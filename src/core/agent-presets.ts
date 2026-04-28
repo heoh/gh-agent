@@ -1,5 +1,8 @@
 import type { Config, WorkspacePaths } from './types.js';
 
+export const AGENT_PROMPT_PLACEHOLDER = '$GH_AGENT_PROMPT';
+export const LEGACY_AGENT_PROMPT_PLACEHOLDER = '$prompt';
+
 export type BuiltInAgentPresetId =
   | 'claude'
   | 'codex'
@@ -36,7 +39,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
   {
     id: 'claude',
     label: 'Claude Code',
-    commandTemplate: 'claude -p "$prompt"',
+    commandTemplate: 'claude -p "$GH_AGENT_PROMPT"',
     configEnv: null,
     supportsIsolatedConfig: false,
     caveats: [
@@ -49,7 +52,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
     id: 'codex',
     label: 'OpenAI Codex CLI',
     commandTemplate:
-      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     configEnv: 'CODEX_HOME',
     supportsIsolatedConfig: true,
     caveats: [
@@ -61,7 +64,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
   {
     id: 'copilot',
     label: 'GitHub Copilot CLI',
-    commandTemplate: 'copilot -p "$prompt"',
+    commandTemplate: 'copilot -p "$GH_AGENT_PROMPT"',
     configEnv: 'COPILOT_HOME',
     supportsIsolatedConfig: true,
     caveats: ['The CLI must already be installed and authenticated.'],
@@ -71,7 +74,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
   {
     id: 'gemini',
     label: 'Gemini CLI',
-    commandTemplate: 'gemini -p "$prompt"',
+    commandTemplate: 'gemini -p "$GH_AGENT_PROMPT"',
     configEnv: 'GEMINI_CLI_HOME',
     supportsIsolatedConfig: true,
     caveats: ['The CLI must already be installed and authenticated.'],
@@ -80,7 +83,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
   {
     id: 'cursor',
     label: 'Cursor CLI',
-    commandTemplate: 'cursor-agent -p "$prompt"',
+    commandTemplate: 'cursor-agent -p "$GH_AGENT_PROMPT"',
     configEnv: 'CURSOR_CONFIG_DIR',
     supportsIsolatedConfig: true,
     caveats: [
@@ -93,7 +96,7 @@ const BUILT_IN_AGENT_PRESETS: BuiltInAgentPresetDefinition[] = [
   {
     id: 'cline',
     label: 'Cline CLI',
-    commandTemplate: 'cline "$prompt"',
+    commandTemplate: 'cline "$GH_AGENT_PROMPT"',
     configEnv: 'CLINE_DIR',
     supportsIsolatedConfig: true,
     caveats: [
@@ -180,6 +183,13 @@ export function inferAgentPresetIdFromCommand(command: string): AgentPresetId {
   }
 
   return 'custom';
+}
+
+export function commandHasAgentPromptPlaceholder(command: string): boolean {
+  return (
+    command.includes(AGENT_PROMPT_PLACEHOLDER) ||
+    command.includes(LEGACY_AGENT_PROMPT_PLACEHOLDER)
+  );
 }
 
 export function getAgentPresetConfigDir(

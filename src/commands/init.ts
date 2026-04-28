@@ -3,6 +3,8 @@ import { stdin as processStdin, stdout as processStdout } from 'node:process';
 
 import {
   AGENT_PRESETS,
+  AGENT_PROMPT_PLACEHOLDER,
+  commandHasAgentPromptPlaceholder,
   CUSTOM_AGENT_PRESET,
   DEFAULT_AGENT_PRESET_ID,
   getAgentPresetDefinition,
@@ -91,7 +93,7 @@ async function promptForAgentPresetSelection(currentSelection: {
 
     const customCommand = (
       await rl.question(
-        `Custom command (must include "$prompt") [${currentSelection.command}]: `,
+        `Custom command (must include "${AGENT_PROMPT_PLACEHOLDER}") [${currentSelection.command}]: `,
       )
     ).trim();
 
@@ -106,9 +108,9 @@ async function promptForAgentPresetSelection(currentSelection: {
 }
 
 function validatePromptPlaceholder(command: string): void {
-  if (!command.includes('$prompt')) {
+  if (!commandHasAgentPromptPlaceholder(command)) {
     throw new Error(
-      'Agent commands must include the "$prompt" placeholder so gh-agent can inject the session brief.',
+      `Agent commands must include the "${AGENT_PROMPT_PLACEHOLDER}" placeholder so gh-agent can inject the session brief.`,
     );
   }
 }

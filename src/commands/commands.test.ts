@@ -356,7 +356,7 @@ describe('commands', () => {
 
     expect(config.agentId).toBe('gh-agent');
     expect(config.defaultAgentCommand).toBe(
-      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     );
     expect(config.projectId).toBe('proj_123');
     expect(config.projectTitle).toBe('gh-agent');
@@ -374,7 +374,7 @@ describe('commands', () => {
     expect(logs).toContain('AGENTS.md: created');
     expect(logs).toContain('Default agent preset: OpenAI Codex CLI');
     expect(logs).toContain(
-      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     );
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
@@ -401,13 +401,13 @@ describe('commands', () => {
       await readFile(paths.configFile, 'utf8'),
     ) as Record<string, unknown>;
 
-    expect(config.defaultAgentCommand).toBe('gemini -p "$prompt"');
+    expect(config.defaultAgentCommand).toBe('gemini -p "$GH_AGENT_PROMPT"');
   });
 
   it('initCommand accepts a custom default agent command when it includes the prompt placeholder', async () => {
     await initCommand(
       {
-        customCommand: 'my-agent --headless "$prompt"',
+        customCommand: 'my-agent --headless "$GH_AGENT_PROMPT"',
       },
       {
         githubClient: createGitHubClientStub(0, 0),
@@ -419,7 +419,9 @@ describe('commands', () => {
       await readFile(paths.configFile, 'utf8'),
     ) as Record<string, unknown>;
 
-    expect(config.defaultAgentCommand).toBe('my-agent --headless "$prompt"');
+    expect(config.defaultAgentCommand).toBe(
+      'my-agent --headless "$GH_AGENT_PROMPT"',
+    );
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
@@ -441,7 +443,7 @@ describe('commands', () => {
     );
     expect(logs).toContain('Default agent preset: codex (OpenAI Codex CLI)');
     expect(logs).toContain(
-      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
     );
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Project: gh-agent');
@@ -527,6 +529,7 @@ describe('commands', () => {
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
     expect(executeInput.env.CODEX_HOME).toBe(paths.root);
+    expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
     expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
     expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);
@@ -566,6 +569,7 @@ describe('commands', () => {
 
     const paths = getWorkspacePaths(getWorkspaceRoot());
     expect(executeInput.cwd).toBe(getWorkspaceRoot());
+    expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
     expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
   });

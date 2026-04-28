@@ -63,6 +63,7 @@ function createSessionEnvironment(input: {
   return {
     ...process.env,
     ...input.agentRuntimeEnv,
+    GH_AGENT_PROMPT: input.prompt,
     prompt: input.prompt,
     GH_AGENT_HOME: input.ghAgentHome,
     GH_CONFIG_DIR: input.ghConfigDir,

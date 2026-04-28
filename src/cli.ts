@@ -49,7 +49,7 @@ function createProgram(): Command {
     )
     .option(
       '--custom-command <command>',
-      'Custom default agent command template. Must include "$prompt".',
+      'Custom default agent command template. Must include "$GH_AGENT_PROMPT".',
     )
     .action(async (options: { agentPreset?: string; customCommand?: string }) =>
       initCommand(options),

@@ -44,7 +44,7 @@ You can choose the preset explicitly:
 ```bash
 gh-agent init --agent-preset codex
 gh-agent init --agent-preset gemini
-gh-agent init --custom-command 'my-agent --headless "$prompt"'
+gh-agent init --custom-command 'my-agent --headless "$GH_AGENT_PROMPT"'
 ```
 
 Built-in preset ids:
@@ -66,7 +66,7 @@ Preset notes:
 - `codex` defaults to workspace-write plus network access because GitHub work
   needs network-enabled execution.
 - `cursor` should be treated as beta.
-- Custom commands must include the literal `$prompt` placeholder.
+- Custom commands must include the literal `$GH_AGENT_PROMPT` placeholder.
 
 ### 2) Run the loop
 
