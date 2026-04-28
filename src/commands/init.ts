@@ -1,3 +1,6 @@
+import { createInterface } from 'node:readline/promises';
+import process from 'node:process';
+
 import {
   ensureAgentsGuide,
   saveConfig,
@@ -9,12 +12,93 @@ import {
   pathExists,
 } from '../core/workspace.js';
 import {
+  AGENT_DEFINITIONS,
+  type AgentId,
+  getAgentDefinition,
+} from '../core/agents.js';
+import {
   createGitHubSignalClient,
   GitHubAuthError,
   GitHubBootstrapError,
   GitHubConfigError,
 } from '../core/github.js';
 import type { GitHubSignalClient } from '../core/types.js';
+
+export interface InitCommandOptions {
+  agent?: AgentId;
+}
+
+interface InitCommandDependencies {
+  githubClient?: GitHubSignalClient;
+  isInteractive?: boolean;
+  promptForAgent?: () => Promise<AgentId>;
+}
+
+function isInitCommandDependencies(
+  value: InitCommandOptions | InitCommandDependencies,
+): value is InitCommandDependencies {
+  return (
+    'githubClient' in value ||
+    'isInteractive' in value ||
+    'promptForAgent' in value
+  );
+}
+
+function isInteractiveTerminal(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+function mapAgentPromptError(error: unknown): never {
+  if (error instanceof Error && error.name === 'ExitPromptError') {
+    throw Object.assign(new Error('Agent selection was cancelled.'), {
+      exitCode: 1,
+    });
+  }
+
+  throw error;
+}
+
+export async function selectAgentPrompt(): Promise<AgentId> {
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    console.log('Select the agent CLI for this workspace:');
+    for (const [index, agent] of AGENT_DEFINITIONS.entries()) {
+      console.log(`  ${index + 1}. ${agent.label} (${agent.id})`);
+    }
+
+    while (true) {
+      const answer = (await readline.question('Enter a number: ')).trim();
+
+      if (answer.length === 0) {
+        console.log('Please enter a number from the list.');
+        continue;
+      }
+
+      const selectedIndex = Number.parseInt(answer, 10);
+
+      if (
+        Number.isFinite(selectedIndex) &&
+        String(selectedIndex) === answer &&
+        selectedIndex >= 1 &&
+        selectedIndex <= AGENT_DEFINITIONS.length
+      ) {
+        return AGENT_DEFINITIONS[selectedIndex - 1].id;
+      }
+
+      console.log(
+        `Please enter a number between 1 and ${AGENT_DEFINITIONS.length}.`,
+      );
+    }
+  } catch (error) {
+    mapAgentPromptError(error);
+  } finally {
+    readline.close();
+  }
+}
 
 function isMissingProjectScopeError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -25,20 +109,51 @@ function isMissingProjectScopeError(error: unknown): boolean {
 }
 
 export async function initCommand(
-  dependencies: {
-    githubClient?: GitHubSignalClient;
-  } = {},
+  optionsOrDependencies: InitCommandOptions | InitCommandDependencies = {},
+  dependenciesArg: InitCommandDependencies = {},
 ): Promise<void> {
+  const options = isInitCommandDependencies(optionsOrDependencies)
+    ? {}
+    : optionsOrDependencies;
+  const dependencies = isInitCommandDependencies(optionsOrDependencies)
+    ? optionsOrDependencies
+    : dependenciesArg;
   const paths = getWorkspacePaths();
   const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
+  const isInteractive = dependencies.isInteractive ?? isInteractiveTerminal();
+  let selectedAgentId = options.agent ?? null;
+
+  if (selectedAgentId === null && isInteractive) {
+    try {
+      selectedAgentId = await (
+        dependencies.promptForAgent ?? selectAgentPrompt
+      )();
+    } catch (error) {
+      mapAgentPromptError(error);
+    }
+  }
+
+  if (selectedAgentId === null) {
+    throw Object.assign(
+      new Error(
+        'Non-interactive mode requires --agent. Re-run with gh-agent init --agent <name>.',
+      ),
+      { exitCode: 2 },
+    );
+  }
+  const agentDefinition = getAgentDefinition(selectedAgentId);
 
   await ensureWorkspaceStructure(paths);
 
   const hadConfig = await pathExists(paths.configFile);
   const config = await ensureConfig(paths);
+  const configWithSelectedAgent = {
+    ...config,
+    defaultAgentCommand: agentDefinition.defaultAgentCommand,
+  };
 
   const hadState = await pathExists(paths.stateFile);
-  await ensureSessionState(paths, config.agentId);
+  await ensureSessionState(paths, configWithSelectedAgent.agentId);
   const agentsGuide = await ensureAgentsGuide(paths);
 
   try {
@@ -76,7 +191,7 @@ export async function initCommand(
     }
 
     const updatedConfig = {
-      ...config,
+      ...configWithSelectedAgent,
       projectId: project.projectId,
       projectTitle: project.projectTitle,
       projectUrl: project.projectUrl,
@@ -92,6 +207,7 @@ export async function initCommand(
     console.log(
       `Config: ${hadConfig ? 'existing .gh-agent/config.json updated' : '.gh-agent/config.json created'}`,
     );
+    console.log(`Agent: ${agentDefinition.label} (${agentDefinition.id})`);
     console.log(
       `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
     );

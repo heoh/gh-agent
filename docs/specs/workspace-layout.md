@@ -50,6 +50,7 @@ agent-workspace/
 실행 명령 관련 규칙:
 
 - `agentId`는 식별자다. 실제 실행 커맨드는 `defaultAgentCommand` 와 `heavyAgentCommand` 가 담당한다.
+- `gh-agent init`는 알려진 agent CLI 목록에서 선택하게 하고, 선택 결과를 `defaultAgentCommand`에 저장한다.
 - `defaultAgentCommand` 는 항상 문자열이어야 하며 MVP 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"` 다.
 - command의 prompt 부분은 시스템이 세션마다 동적으로 생성한 행동 가이드를 주입하는 자리다.
 - command template는 `GH_AGENT_PROMPT` env를 기준으로 맞춘다.

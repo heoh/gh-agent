@@ -35,8 +35,15 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 예상 입력 예시:
 
 - workspace path
-- agent name 또는 identifier
+- `--agent <name>` (`claude-code`, `codex`, `copilot`, `gemini`, `cursor`, `cline`)
 - polling interval 기본값
+- 터미널 환경에서는 agent 번호 목록을 통한 대화형 선택
+
+입력 규칙:
+
+- `--agent`가 있으면 prompt 없이 해당 agent를 사용한다.
+- `--agent`가 없고 TTY가 있으면 번호 기반 대화형 선택을 띄운다.
+- `--agent`가 없고 TTY가 없으면 에러로 종료한다.
 
 ### Side Effects
 
