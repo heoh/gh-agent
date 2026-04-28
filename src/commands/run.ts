@@ -54,12 +54,14 @@ async function defaultExecuteAgentSession(input: {
 
 function createSessionEnvironment(input: {
   prompt: string;
+  ghAgentHome: string;
   ghConfigDir: string;
   gitConfigGlobalFile: string;
 }): NodeJS.ProcessEnv {
   return {
     ...process.env,
     GH_AGENT_PROMPT: input.prompt,
+    GH_AGENT_HOME: input.ghAgentHome,
     GH_CONFIG_DIR: input.ghConfigDir,
     GIT_CONFIG_GLOBAL: input.gitConfigGlobalFile,
   };
@@ -323,6 +325,7 @@ export async function runCommand(
               cwd: paths.root,
               env: createSessionEnvironment({
                 prompt,
+                ghAgentHome: paths.root,
                 ghConfigDir: paths.ghConfigDir,
                 gitConfigGlobalFile: paths.gitConfigGlobalFile,
               }),

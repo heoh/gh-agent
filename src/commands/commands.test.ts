@@ -483,6 +483,7 @@ describe('commands', () => {
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
     expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
+    expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
     expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);
     expect(await readLockInfo(paths.lockFile)).toBeNull();
@@ -522,6 +523,7 @@ describe('commands', () => {
     const paths = getWorkspacePaths(getWorkspaceRoot());
     expect(executeInput.cwd).toBe(getWorkspaceRoot());
     expect(executeInput.env.GH_AGENT_PROMPT).toBe(executeInput.prompt);
+    expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
   });
 
