@@ -59,7 +59,7 @@ function createSessionEnvironment(input: {
 }): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    prompt: input.prompt,
+    GH_AGENT_PROMPT: input.prompt,
     GH_CONFIG_DIR: input.ghConfigDir,
     GIT_CONFIG_GLOBAL: input.gitConfigGlobalFile,
   };
