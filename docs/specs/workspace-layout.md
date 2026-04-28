@@ -40,7 +40,7 @@ agent-workspace/
 ```json
 {
   "agentId": "gh-agent",
-  "defaultAgentCommand": "codex exec --full-auto \"$prompt\"",
+  "defaultAgentCommand": "codex exec --config sandbox_workspace_write.network_access=true --full-auto \"$prompt\"",
   "heavyAgentCommand": null,
   "pollIntervalMs": 30000,
   "debounceMs": 60000
@@ -50,7 +50,7 @@ agent-workspace/
 실행 명령 관련 규칙:
 
 - `agentId`는 식별자다. 실제 실행 커맨드는 `defaultAgentCommand` 와 `heavyAgentCommand` 가 담당한다.
-- `defaultAgentCommand` 는 항상 문자열이어야 하며 MVP 기본값은 `codex exec --full-auto "$prompt"` 다.
+- `defaultAgentCommand` 는 항상 문자열이어야 하며 MVP 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"` 다.
 - command의 prompt 부분은 시스템이 세션마다 동적으로 생성한 행동 가이드를 주입하는 자리다.
 - `heavyAgentCommand` 는 문자열 또는 `null` 이다.
 - heavy command가 `null` 인 경우, heavy 에이전트가 선택되어도 시스템은 기본 command로 폴백할 수 있다.
