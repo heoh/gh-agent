@@ -182,17 +182,6 @@ export function inferAgentPresetIdFromCommand(command: string): AgentPresetId {
   return 'custom';
 }
 
-export function resolveDefaultAgentPresetId(input: {
-  presetId: unknown;
-  defaultAgentCommand: string;
-}): AgentPresetId {
-  if (isAgentPresetId(input.presetId)) {
-    return input.presetId;
-  }
-
-  return inferAgentPresetIdFromCommand(input.defaultAgentCommand);
-}
-
 export function getAgentPresetConfigDir(
   paths: Pick<WorkspacePaths, 'stateDir'>,
   presetId: AgentPresetId,
@@ -209,7 +198,9 @@ export function resolveAgentRuntimeEnvironment(input: {
     return {};
   }
 
-  const preset = getAgentPresetDefinition(input.config.defaultAgentPreset);
+  const preset = getAgentPresetDefinition(
+    inferAgentPresetIdFromCommand(input.config.defaultAgentCommand),
+  );
   if (!preset.supportsIsolatedConfig || preset.configEnv === null) {
     return {};
   }

@@ -1,5 +1,9 @@
 import { readLockInfo } from '../core/lock.js';
 import {
+  getAgentPresetDefinition,
+  inferAgentPresetIdFromCommand,
+} from '../core/agent-presets.js';
+import {
   createGitHubSignalClient,
   GitHubAuthError,
   GitHubConfigError,
@@ -41,11 +45,22 @@ export async function statusCommand(
       authStatus.kind === 'authenticated'
         ? await githubClient.getSignalSummary(paths, config)
         : null;
+    const inferredPreset = inferAgentPresetIdFromCommand(
+      config.defaultAgentCommand,
+    );
 
     console.log(formatValue('Workspace', paths.root));
     console.log(formatValue('Config', paths.configFile));
     console.log(formatValue('Agent', config.agentId));
-    console.log(formatValue('Default agent preset', config.defaultAgentPreset));
+    console.log(
+      formatValue(
+        'Default agent preset',
+        `${inferredPreset} (${getAgentPresetDefinition(inferredPreset).label})`,
+      ),
+    );
+    console.log(
+      formatValue('Default agent command', config.defaultAgentCommand),
+    );
     console.log(formatValue('Project', config.projectTitle));
     console.log(formatValue('Project URL', config.projectUrl));
     console.log(formatValue('Mode', state.currentMode));

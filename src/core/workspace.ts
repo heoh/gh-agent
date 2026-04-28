@@ -22,7 +22,6 @@ import type {
 import {
   DEFAULT_AGENT_PRESET_ID,
   resolveAgentPresetCommandTemplate,
-  resolveDefaultAgentPresetId,
 } from './agent-presets.js';
 
 export class WorkspaceNotFoundError extends Error {}
@@ -63,7 +62,6 @@ function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptio
 
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
-  defaultAgentPreset: DEFAULT_AGENT_PRESET_ID,
   defaultAgentCommand: resolveAgentPresetCommandTemplate(
     DEFAULT_AGENT_PRESET_ID,
   ),
@@ -169,14 +167,6 @@ function normalizeConfig(raw: unknown): Config {
       typeof record.agentId === 'string' && record.agentId.length > 0
         ? record.agentId
         : DEFAULT_CONFIG.agentId,
-    defaultAgentPreset: resolveDefaultAgentPresetId({
-      presetId: record.defaultAgentPreset,
-      defaultAgentCommand:
-        typeof record.defaultAgentCommand === 'string' &&
-        record.defaultAgentCommand.length > 0
-          ? record.defaultAgentCommand
-          : DEFAULT_CONFIG.defaultAgentCommand,
-    }),
     defaultAgentCommand:
       typeof record.defaultAgentCommand === 'string' &&
       record.defaultAgentCommand.length > 0

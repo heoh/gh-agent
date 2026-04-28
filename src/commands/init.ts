@@ -6,6 +6,7 @@ import {
   CUSTOM_AGENT_PRESET,
   DEFAULT_AGENT_PRESET_ID,
   getAgentPresetDefinition,
+  inferAgentPresetIdFromCommand,
   isAgentPresetId,
   resolveAgentPresetSelection,
 } from '../core/agent-presets.js';
@@ -115,7 +116,6 @@ function validatePromptPlaceholder(command: string): void {
 async function resolveInitialAgentSelection(input: {
   hadConfig: boolean;
   options: InitCommandOptions;
-  existingPresetId: AgentPresetId;
   existingCommand: string;
   promptForAgentPreset?: InitCommandDependencies['promptForAgentPreset'];
 }): Promise<{
@@ -151,7 +151,7 @@ async function resolveInitialAgentSelection(input: {
   if (input.hadConfig) {
     validatePromptPlaceholder(input.existingCommand);
     return {
-      presetId: input.existingPresetId,
+      presetId: inferAgentPresetIdFromCommand(input.existingCommand),
       command: input.existingCommand,
     };
   }
@@ -207,7 +207,6 @@ export async function initCommand(
   const initialAgentSelection = await resolveInitialAgentSelection({
     hadConfig,
     options,
-    existingPresetId: config.defaultAgentPreset,
     existingCommand: config.defaultAgentCommand,
     promptForAgentPreset: dependencies.promptForAgentPreset,
   });
@@ -252,7 +251,6 @@ export async function initCommand(
 
     const updatedConfig = {
       ...config,
-      defaultAgentPreset: initialAgentSelection.presetId,
       defaultAgentCommand: initialAgentSelection.command,
       projectId: project.projectId,
       projectTitle: project.projectTitle,
@@ -278,7 +276,9 @@ export async function initCommand(
     console.log(
       `AGENTS.md: ${agentsGuide.created ? 'created' : 'existing file kept'}`,
     );
-    const preset = getAgentPresetDefinition(updatedConfig.defaultAgentPreset);
+    const preset = getAgentPresetDefinition(
+      inferAgentPresetIdFromCommand(updatedConfig.defaultAgentCommand),
+    );
     console.log(`Default agent preset: ${preset.label}`);
     console.log(`Default agent command: ${updatedConfig.defaultAgentCommand}`);
     if (preset.supportsIsolatedConfig && preset.configEnv !== null) {

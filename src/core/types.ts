@@ -33,7 +33,6 @@ export interface ProjectExecutionClassOptionIds {
 
 export interface Config {
   agentId: string;
-  defaultAgentPreset: AgentPresetId;
   defaultAgentCommand: string;
   heavyAgentCommand: string | null;
   pollIntervalMs: number;

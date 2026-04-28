@@ -355,7 +355,6 @@ describe('commands', () => {
     const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
-    expect(config.defaultAgentPreset).toBe('codex');
     expect(config.defaultAgentCommand).toBe(
       'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
     );
@@ -402,7 +401,6 @@ describe('commands', () => {
       await readFile(paths.configFile, 'utf8'),
     ) as Record<string, unknown>;
 
-    expect(config.defaultAgentPreset).toBe('gemini');
     expect(config.defaultAgentCommand).toBe('gemini -p "$prompt"');
   });
 
@@ -421,7 +419,6 @@ describe('commands', () => {
       await readFile(paths.configFile, 'utf8'),
     ) as Record<string, unknown>;
 
-    expect(config.defaultAgentPreset).toBe('custom');
     expect(config.defaultAgentCommand).toBe('my-agent --headless "$prompt"');
   });
 
@@ -442,7 +439,10 @@ describe('commands', () => {
     expect(logs).toContain(
       `Config: ${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
-    expect(logs).toContain('Default agent preset: codex');
+    expect(logs).toContain('Default agent preset: codex (OpenAI Codex CLI)');
+    expect(logs).toContain(
+      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+    );
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Project: gh-agent');
     expect(logs).toContain(

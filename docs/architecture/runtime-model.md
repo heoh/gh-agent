@@ -90,14 +90,13 @@ MVP selection 규칙은 아래와 같다.
 
 workspace config는 실행 명령을 아래 두 필드로 가진다.
 
-- `defaultAgentPreset: claude | codex | copilot | gemini | cursor | cline | custom`
 - `defaultAgentCommand: string`
 - `heavyAgentCommand: string | null`
 
 MVP에서는 둘 다 쉘에서 바로 실행 가능한 command string으로 취급한다.
 
 - `agentId`는 식별자이며 실행 커맨드의 대체물이 아니다.
-- `defaultAgentPreset` 은 init 시 고른 preset 식별자다. 실제 실행 경로는 여전히 command string 기반이다.
+- preset selection은 `init` UX에서만 사용된다. 실제 저장/실행 source of truth는 `defaultAgentCommand` 문자열이다.
 - `defaultAgentCommand` 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"` 다.
 - command 안의 prompt 부분은 시스템이 이번 세션에 수행할 행동 가이드를 동적으로 생성해 주입한다.
 - `heavyAgentCommand` 기본값은 `null` 이다.

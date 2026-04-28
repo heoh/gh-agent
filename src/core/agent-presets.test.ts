@@ -10,7 +10,6 @@ import type { Config } from './types.js';
 function createConfig(overrides: Partial<Config> = {}): Config {
   return {
     agentId: 'gh-agent',
-    defaultAgentPreset: 'codex',
     defaultAgentCommand:
       'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
     heavyAgentCommand: null,
@@ -73,7 +72,6 @@ describe('agent presets', () => {
     expect(
       resolveAgentRuntimeEnvironment({
         config: createConfig({
-          defaultAgentPreset: 'gemini',
           defaultAgentCommand: 'gemini -p "$prompt"',
         }),
         paths: {
@@ -88,7 +86,6 @@ describe('agent presets', () => {
     expect(
       resolveAgentRuntimeEnvironment({
         config: createConfig({
-          defaultAgentPreset: 'claude',
           defaultAgentCommand: 'claude -p "$prompt"',
         }),
         paths: {
