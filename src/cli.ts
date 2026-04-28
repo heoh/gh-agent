@@ -53,7 +53,13 @@ function createProgram(): Command {
       `Agent CLI to configure. One of: ${formatSupportedAgentIds()}`,
       parseAgentIdOption,
     )
-    .action(async (options: { agent?: AgentId }) => initCommand(options));
+    .option(
+      '--agent-command <command>',
+      'Custom agent command to store in config.json.',
+    )
+    .action(async (options: { agent?: AgentId; agentCommand?: string }) =>
+      initCommand(options),
+    );
 
   program
     .command('run')

@@ -26,12 +26,23 @@ import type { GitHubSignalClient } from '../core/types.js';
 
 export interface InitCommandOptions {
   agent?: AgentId;
+  agentCommand?: string;
+}
+
+export interface InitCommandSelection {
+  label: string;
+  command: string;
+}
+
+export interface AgentPromptReadline {
+  question(query: string): Promise<string>;
+  close(): void;
 }
 
 interface InitCommandDependencies {
   githubClient?: GitHubSignalClient;
   isInteractive?: boolean;
-  promptForAgent?: () => Promise<AgentId>;
+  promptForSelection?: () => Promise<InitCommandSelection>;
 }
 
 function isInitCommandDependencies(
@@ -40,7 +51,7 @@ function isInitCommandDependencies(
   return (
     'githubClient' in value ||
     'isInteractive' in value ||
-    'promptForAgent' in value
+    'promptForSelection' in value
   );
 }
 
@@ -49,7 +60,10 @@ function isInteractiveTerminal(): boolean {
 }
 
 function mapAgentPromptError(error: unknown): never {
-  if (error instanceof Error && error.name === 'ExitPromptError') {
+  if (
+    error instanceof Error &&
+    (error.name === 'ExitPromptError' || error.name === 'AbortError')
+  ) {
     throw Object.assign(new Error('Agent selection was cancelled.'), {
       exitCode: 1,
     });
@@ -58,7 +72,49 @@ function mapAgentPromptError(error: unknown): never {
   throw error;
 }
 
-export async function selectAgentPrompt(): Promise<AgentId> {
+function createPresetSelection(agentId: AgentId): InitCommandSelection {
+  const agentDefinition = getAgentDefinition(agentId);
+
+  return {
+    label: `${agentDefinition.label} (${agentDefinition.id})`,
+    command: agentDefinition.defaultAgentCommand,
+  };
+}
+
+function createCustomCommandSelection(command: string): InitCommandSelection {
+  return {
+    label: `Custom command (${formatCommandPreview(command)})`,
+    command,
+  };
+}
+
+function formatCommandPreview(command: string): string {
+  const normalized = command.trim().replace(/\s+/g, ' ');
+
+  if (normalized.length <= 48) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 45)}...`;
+}
+
+export async function promptForCustomCommand(
+  readline: AgentPromptReadline,
+): Promise<InitCommandSelection> {
+  console.log('Enter a one-line custom agent command.');
+
+  while (true) {
+    const command = (await readline.question('Command: ')).trim();
+
+    if (command.length > 0) {
+      return createCustomCommandSelection(command);
+    }
+
+    console.log('Please enter a non-empty command.');
+  }
+}
+
+export async function selectAgentPrompt(): Promise<InitCommandSelection> {
   const readline = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -69,6 +125,8 @@ export async function selectAgentPrompt(): Promise<AgentId> {
     for (const [index, agent] of AGENT_DEFINITIONS.entries()) {
       console.log(`  ${index + 1}. ${agent.label} (${agent.id})`);
     }
+    const customCommandIndex = AGENT_DEFINITIONS.length + 1;
+    console.log(`  ${customCommandIndex}. Custom command`);
 
     while (true) {
       const answer = (await readline.question('Enter a number: ')).trim();
@@ -86,12 +144,18 @@ export async function selectAgentPrompt(): Promise<AgentId> {
         selectedIndex >= 1 &&
         selectedIndex <= AGENT_DEFINITIONS.length
       ) {
-        return AGENT_DEFINITIONS[selectedIndex - 1].id;
+        return createPresetSelection(AGENT_DEFINITIONS[selectedIndex - 1].id);
       }
 
-      console.log(
-        `Please enter a number between 1 and ${AGENT_DEFINITIONS.length}.`,
-      );
+      if (
+        Number.isFinite(selectedIndex) &&
+        String(selectedIndex) === answer &&
+        selectedIndex === customCommandIndex
+      ) {
+        return await promptForCustomCommand(readline);
+      }
+
+      console.log(`Please enter a number between 1 and ${customCommandIndex}.`);
     }
   } catch (error) {
     mapAgentPromptError(error);
@@ -121,27 +185,33 @@ export async function initCommand(
   const paths = getWorkspacePaths();
   const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
   const isInteractive = dependencies.isInteractive ?? isInteractiveTerminal();
-  let selectedAgentId = options.agent ?? null;
+  const customAgentCommand =
+    typeof options.agentCommand === 'string' ? options.agentCommand.trim() : '';
+  let selection: InitCommandSelection | null =
+    customAgentCommand.length > 0
+      ? createCustomCommandSelection(customAgentCommand)
+      : options.agent !== undefined
+        ? createPresetSelection(options.agent)
+        : null;
 
-  if (selectedAgentId === null && isInteractive) {
+  if (selection === null && isInteractive) {
     try {
-      selectedAgentId = await (
-        dependencies.promptForAgent ?? selectAgentPrompt
+      selection = await (
+        dependencies.promptForSelection ?? selectAgentPrompt
       )();
     } catch (error) {
       mapAgentPromptError(error);
     }
   }
 
-  if (selectedAgentId === null) {
+  if (selection === null) {
     throw Object.assign(
       new Error(
-        'Non-interactive mode requires --agent. Re-run with gh-agent init --agent <name>.',
+        'Non-interactive mode requires --agent or --agent-command. Re-run with gh-agent init --agent <name> or --agent-command "<command>".',
       ),
       { exitCode: 2 },
     );
   }
-  const agentDefinition = getAgentDefinition(selectedAgentId);
 
   await ensureWorkspaceStructure(paths);
 
@@ -149,7 +219,7 @@ export async function initCommand(
   const config = await ensureConfig(paths);
   const configWithSelectedAgent = {
     ...config,
-    defaultAgentCommand: agentDefinition.defaultAgentCommand,
+    defaultAgentCommand: selection.command,
   };
 
   const hadState = await pathExists(paths.stateFile);
@@ -207,7 +277,7 @@ export async function initCommand(
     console.log(
       `Config: ${hadConfig ? 'existing .gh-agent/config.json updated' : '.gh-agent/config.json created'}`,
     );
-    console.log(`Agent: ${agentDefinition.label} (${agentDefinition.id})`);
+    console.log(`Agent: ${selection.label}`);
     console.log(
       `Session state: ${hadState ? 'existing .gh-agent/session_state.json kept' : '.gh-agent/session_state.json created'}`,
     );

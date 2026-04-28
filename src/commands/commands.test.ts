@@ -18,7 +18,7 @@ import {
   captureConsoleLogs,
   setupWorkspaceTest,
 } from '../test/test-helpers.js';
-import { initCommand } from './init.js';
+import { initCommand, promptForCustomCommand } from './init.js';
 import { mailboxIgnoreCommand } from './mailbox/ignore.js';
 import { mailboxListCommand } from './mailbox/list.js';
 import {
@@ -396,8 +396,11 @@ describe('commands', () => {
       {
         githubClient: createGitHubClientStub(0, 0),
         isInteractive: true,
-        async promptForAgent() {
-          return 'cursor';
+        async promptForSelection() {
+          return {
+            label: 'Cursor CLI (cursor)',
+            command: 'cursor-agent -p "$GH_AGENT_PROMPT" --force',
+          };
         },
       },
     );
@@ -423,9 +426,77 @@ describe('commands', () => {
       ),
     ).rejects.toMatchObject({
       message:
-        'Non-interactive mode requires --agent. Re-run with gh-agent init --agent <name>.',
+        'Non-interactive mode requires --agent or --agent-command. Re-run with gh-agent init --agent <name> or --agent-command "<command>".',
       exitCode: 2,
     });
+  });
+
+  it('initCommand accepts a custom agent command in non-interactive mode', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand(
+      {
+        agentCommand: 'my-agent "$GH_AGENT_PROMPT" --cwd "$GH_AGENT_HOME"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: false,
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'my-agent "$GH_AGENT_PROMPT" --cwd "$GH_AGENT_HOME"',
+    );
+    expect(
+      logs.some((line) => line.startsWith('Agent: Custom command (my-agent ')),
+    ).toBe(true);
+  });
+
+  it('initCommand applies a custom command chosen from interactive selection', async () => {
+    await initCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: true,
+        async promptForSelection() {
+          return {
+            label: 'Custom command (custom-agent "$GH_AGENT_PROMPT")',
+            command: 'custom-agent "$GH_AGENT_PROMPT"',
+          };
+        },
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe('custom-agent "$GH_AGENT_PROMPT"');
+  });
+
+  it('initCommand prefers --agent-command over --agent when both are provided', async () => {
+    await initCommand(
+      {
+        agent: 'codex',
+        agentCommand: 'custom-agent "$GH_AGENT_PROMPT"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe('custom-agent "$GH_AGENT_PROMPT"');
   });
 
   it('initCommand overwrites an existing default agent command with the selected agent', async () => {
@@ -462,7 +533,7 @@ describe('commands', () => {
         {
           githubClient: createGitHubClientStub(0, 0),
           isInteractive: true,
-          async promptForAgent() {
+          async promptForSelection() {
             const error = new Error('prompt aborted');
             error.name = 'ExitPromptError';
             throw error;
@@ -473,6 +544,34 @@ describe('commands', () => {
       message: 'Agent selection was cancelled.',
       exitCode: 1,
     });
+  });
+
+  it('promptForCustomCommand prints env var help and reprompts on empty input', async () => {
+    const logs = captureConsoleLogs();
+    const asked: string[] = [];
+    const answers = ['', 'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"'];
+    let closed = false;
+
+    const selection = await promptForCustomCommand({
+      async question(query) {
+        asked.push(query);
+        return answers.shift() ?? '';
+      },
+      close() {
+        closed = true;
+      },
+    });
+
+    expect(selection.command).toBe(
+      'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+    );
+    expect(selection.label.startsWith('Custom command (custom-agent ')).toBe(
+      true,
+    );
+    expect(asked).toEqual(['Command: ', 'Command: ']);
+    expect(logs).toContain('Enter a one-line custom agent command.');
+    expect(logs).toContain('Please enter a non-empty command.');
+    expect(closed).toBe(false);
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
