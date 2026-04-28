@@ -45,6 +45,7 @@ export async function statusCommand(
     console.log(formatValue('Workspace', paths.root));
     console.log(formatValue('Config', paths.configFile));
     console.log(formatValue('Agent', config.agentId));
+    console.log(formatValue('Default agent preset', config.defaultAgentPreset));
     console.log(formatValue('Project', config.projectTitle));
     console.log(formatValue('Project URL', config.projectUrl));
     console.log(formatValue('Mode', state.currentMode));

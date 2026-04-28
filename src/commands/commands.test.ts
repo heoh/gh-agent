@@ -355,6 +355,7 @@ describe('commands', () => {
     const stateGitignore = await readFile(paths.stateGitignoreFile, 'utf8');
 
     expect(config.agentId).toBe('gh-agent');
+    expect(config.defaultAgentPreset).toBe('codex');
     expect(config.defaultAgentCommand).toBe(
       'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
     );
@@ -372,6 +373,10 @@ describe('commands', () => {
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
     expect(logs).toContain('AGENTS.md: created');
+    expect(logs).toContain('Default agent preset: OpenAI Codex CLI');
+    expect(logs).toContain(
+      'Default agent command: codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+    );
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
       'Project schema: Status and Execution Class are single-select; Priority, Type, Source Link, Next Action, and Short Note are text fields',
@@ -380,6 +385,44 @@ describe('commands', () => {
     const agentsFile = await readFile(paths.agentsFile, 'utf8');
     expect(agentsFile).toContain('# AGENTS.md');
     expect(agentsFile).toContain('## Core Role');
+  });
+
+  it('initCommand persists an explicit built-in preset choice for the default agent command', async () => {
+    await initCommand(
+      {
+        agentPreset: 'gemini',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentPreset).toBe('gemini');
+    expect(config.defaultAgentCommand).toBe('gemini -p "$prompt"');
+  });
+
+  it('initCommand accepts a custom default agent command when it includes the prompt placeholder', async () => {
+    await initCommand(
+      {
+        customCommand: 'my-agent --headless "$prompt"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentPreset).toBe('custom');
+    expect(config.defaultAgentCommand).toBe('my-agent --headless "$prompt"');
   });
 
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
@@ -399,6 +442,7 @@ describe('commands', () => {
     expect(logs).toContain(
       `Config: ${getWorkspaceRoot()}/.gh-agent/config.json`,
     );
+    expect(logs).toContain('Default agent preset: codex');
     expect(logs).toContain('Mode: sleeping');
     expect(logs).toContain('Project: gh-agent');
     expect(logs).toContain(
@@ -482,6 +526,9 @@ describe('commands', () => {
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
+    expect(executeInput.env.CODEX_HOME).toBe(
+      `${paths.stateDir}/agent-config/codex`,
+    );
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
     expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);
     expect(await readLockInfo(paths.lockFile)).toBeNull();

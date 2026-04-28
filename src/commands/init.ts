@@ -1,3 +1,14 @@
+import { createInterface } from 'node:readline/promises';
+import { stdin as processStdin, stdout as processStdout } from 'node:process';
+
+import {
+  AGENT_PRESETS,
+  CUSTOM_AGENT_PRESET,
+  DEFAULT_AGENT_PRESET_ID,
+  getAgentPresetDefinition,
+  isAgentPresetId,
+  resolveAgentPresetSelection,
+} from '../core/agent-presets.js';
 import {
   ensureAgentsGuide,
   saveConfig,
@@ -14,7 +25,159 @@ import {
   GitHubBootstrapError,
   GitHubConfigError,
 } from '../core/github.js';
-import type { GitHubSignalClient } from '../core/types.js';
+import type { AgentPresetId, GitHubSignalClient } from '../core/types.js';
+
+interface InitCommandOptions {
+  agentPreset?: string;
+  customCommand?: string;
+}
+
+interface InitCommandDependencies {
+  githubClient?: GitHubSignalClient;
+  promptForAgentPreset?: (currentSelection: {
+    presetId: AgentPresetId;
+    command: string;
+  }) => Promise<{
+    presetId: AgentPresetId;
+    customCommand?: string | null;
+  }>;
+}
+
+function isDependenciesArgument(
+  value: InitCommandOptions | InitCommandDependencies,
+): value is InitCommandDependencies {
+  return 'githubClient' in value || 'promptForAgentPreset' in value;
+}
+
+async function promptForAgentPresetSelection(currentSelection: {
+  presetId: AgentPresetId;
+  command: string;
+}): Promise<{
+  presetId: AgentPresetId;
+  customCommand?: string | null;
+}> {
+  const rl = createInterface({ input: processStdin, output: processStdout });
+
+  try {
+    console.log('Select the default agent preset for this workspace:');
+    for (const [index, preset] of AGENT_PRESETS.entries()) {
+      const suffix =
+        preset.id === currentSelection.presetId ? ' (default)' : '';
+      console.log(`${index + 1}. ${preset.label}${suffix}`);
+    }
+
+    const answer = await rl.question(
+      `Preset [${AGENT_PRESETS.findIndex((preset) => preset.id === currentSelection.presetId) + 1}]: `,
+    );
+    const selection = answer.trim();
+
+    const preset =
+      AGENT_PRESETS[
+        selection.length === 0
+          ? AGENT_PRESETS.findIndex(
+              (candidate) => candidate.id === currentSelection.presetId,
+            )
+          : Number.parseInt(selection, 10) - 1
+      ] ?? null;
+
+    if (preset === null) {
+      throw new Error('Invalid preset selection.');
+    }
+
+    if (preset.id !== CUSTOM_AGENT_PRESET.id) {
+      return { presetId: preset.id };
+    }
+
+    const customCommand = (
+      await rl.question(
+        `Custom command (must include "$prompt") [${currentSelection.command}]: `,
+      )
+    ).trim();
+
+    return {
+      presetId: 'custom',
+      customCommand:
+        customCommand.length > 0 ? customCommand : currentSelection.command,
+    };
+  } finally {
+    rl.close();
+  }
+}
+
+function validatePromptPlaceholder(command: string): void {
+  if (!command.includes('$prompt')) {
+    throw new Error(
+      'Agent commands must include the "$prompt" placeholder so gh-agent can inject the session brief.',
+    );
+  }
+}
+
+async function resolveInitialAgentSelection(input: {
+  hadConfig: boolean;
+  options: InitCommandOptions;
+  existingPresetId: AgentPresetId;
+  existingCommand: string;
+  promptForAgentPreset?: InitCommandDependencies['promptForAgentPreset'];
+}): Promise<{
+  presetId: AgentPresetId;
+  command: string;
+}> {
+  const explicitPreset = input.options.agentPreset?.trim();
+  const explicitCustomCommand = input.options.customCommand?.trim();
+
+  if (explicitPreset !== undefined && explicitPreset.length > 0) {
+    if (!isAgentPresetId(explicitPreset)) {
+      throw new Error(
+        `Unsupported agent preset "${explicitPreset}". Supported values: ${AGENT_PRESETS.map((preset) => preset.id).join(', ')}`,
+      );
+    }
+
+    const selection = resolveAgentPresetSelection({
+      presetId: explicitPreset,
+      customCommand: explicitCustomCommand,
+    });
+    validatePromptPlaceholder(selection.command);
+    return selection;
+  }
+
+  if (explicitCustomCommand !== undefined && explicitCustomCommand.length > 0) {
+    validatePromptPlaceholder(explicitCustomCommand);
+    return {
+      presetId: 'custom',
+      command: explicitCustomCommand,
+    };
+  }
+
+  if (input.hadConfig) {
+    validatePromptPlaceholder(input.existingCommand);
+    return {
+      presetId: input.existingPresetId,
+      command: input.existingCommand,
+    };
+  }
+
+  const promptForAgentPreset =
+    input.promptForAgentPreset ?? promptForAgentPresetSelection;
+  const shouldPrompt =
+    input.promptForAgentPreset !== undefined || processStdin.isTTY;
+  if (shouldPrompt) {
+    const promptedSelection = await promptForAgentPreset({
+      presetId: DEFAULT_AGENT_PRESET_ID,
+      command: input.existingCommand,
+    });
+    const selection = resolveAgentPresetSelection({
+      presetId: promptedSelection.presetId,
+      customCommand: promptedSelection.customCommand,
+    });
+    validatePromptPlaceholder(selection.command);
+    return selection;
+  }
+
+  return {
+    presetId: DEFAULT_AGENT_PRESET_ID,
+    command: input.existingCommand,
+  };
+}
 
 function isMissingProjectScopeError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -25,10 +188,15 @@ function isMissingProjectScopeError(error: unknown): boolean {
 }
 
 export async function initCommand(
-  dependencies: {
-    githubClient?: GitHubSignalClient;
-  } = {},
+  optionsOrDependencies: InitCommandOptions | InitCommandDependencies = {},
+  maybeDependencies: InitCommandDependencies = {},
 ): Promise<void> {
+  const options = isDependenciesArgument(optionsOrDependencies)
+    ? {}
+    : optionsOrDependencies;
+  const dependencies = isDependenciesArgument(optionsOrDependencies)
+    ? optionsOrDependencies
+    : maybeDependencies;
   const paths = getWorkspacePaths();
   const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
 
@@ -36,6 +204,13 @@ export async function initCommand(
 
   const hadConfig = await pathExists(paths.configFile);
   const config = await ensureConfig(paths);
+  const initialAgentSelection = await resolveInitialAgentSelection({
+    hadConfig,
+    options,
+    existingPresetId: config.defaultAgentPreset,
+    existingCommand: config.defaultAgentCommand,
+    promptForAgentPreset: dependencies.promptForAgentPreset,
+  });
 
   const hadState = await pathExists(paths.stateFile);
   await ensureSessionState(paths, config.agentId);
@@ -77,6 +252,8 @@ export async function initCommand(
 
     const updatedConfig = {
       ...config,
+      defaultAgentPreset: initialAgentSelection.presetId,
+      defaultAgentCommand: initialAgentSelection.command,
       projectId: project.projectId,
       projectTitle: project.projectTitle,
       projectUrl: project.projectUrl,
@@ -101,6 +278,14 @@ export async function initCommand(
     console.log(
       `AGENTS.md: ${agentsGuide.created ? 'created' : 'existing file kept'}`,
     );
+    const preset = getAgentPresetDefinition(updatedConfig.defaultAgentPreset);
+    console.log(`Default agent preset: ${preset.label}`);
+    console.log(`Default agent command: ${updatedConfig.defaultAgentCommand}`);
+    if (preset.supportsIsolatedConfig && preset.configEnv !== null) {
+      console.log(
+        `Preset config isolation: ${preset.configEnv} -> ${paths.stateDir}/agent-config/${preset.id}`,
+      );
+    }
     console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);
     console.log(`Git identity: ${gitIdentity.name} <${gitIdentity.email}>`);
     console.log(

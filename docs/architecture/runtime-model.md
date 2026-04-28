@@ -90,15 +90,20 @@ MVP selection 규칙은 아래와 같다.
 
 workspace config는 실행 명령을 아래 두 필드로 가진다.
 
+- `defaultAgentPreset: claude | codex | copilot | gemini | cursor | cline | custom`
 - `defaultAgentCommand: string`
 - `heavyAgentCommand: string | null`
 
 MVP에서는 둘 다 쉘에서 바로 실행 가능한 command string으로 취급한다.
 
 - `agentId`는 식별자이며 실행 커맨드의 대체물이 아니다.
+- `defaultAgentPreset` 은 init 시 고른 preset 식별자다. 실제 실행 경로는 여전히 command string 기반이다.
 - `defaultAgentCommand` 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"` 다.
 - command 안의 prompt 부분은 시스템이 이번 세션에 수행할 행동 가이드를 동적으로 생성해 주입한다.
 - `heavyAgentCommand` 기본값은 `null` 이다.
+- preset이 isolated config env를 지원하면 런타임은 `.gh-agent/agent-config/<preset>` 을 해당 CLI env (`CODEX_HOME`, `COPILOT_HOME`, `GEMINI_CLI_HOME`, `CURSOR_CONFIG_DIR`, `CLINE_DIR`) 로 주입한다.
+- Claude preset은 현재 gh-agent가 별도 isolated config env를 주입하지 않는다.
+- preset은 편의 기능일 뿐이며, CLI 설치/auth/healthcheck는 gh-agent 범위 밖이다.
 
 ### Heavy Command Fallback
 

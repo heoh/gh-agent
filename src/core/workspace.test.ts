@@ -34,6 +34,7 @@ describe('workspace normalization', () => {
     expect(stateGitignore).toBe('*\n!config.json\n');
     expect(config).toEqual({
       agentId: 'gh-agent',
+      defaultAgentPreset: 'codex',
       defaultAgentCommand:
         'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
@@ -99,6 +100,7 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'custom-agent',
+      defaultAgentPreset: 'codex',
       defaultAgentCommand:
         'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
@@ -141,6 +143,7 @@ describe('workspace normalization', () => {
 
     expect(config).toEqual({
       agentId: 'gh-agent',
+      defaultAgentPreset: 'codex',
       defaultAgentCommand:
         'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
       heavyAgentCommand: null,
@@ -180,6 +183,7 @@ describe('workspace normalization', () => {
     await writeFile(
       paths.configFile,
       JSON.stringify({
+        defaultAgentPreset: 'custom',
         defaultAgentCommand: 'codex --profile default',
         heavyAgentCommand: '',
       }),
@@ -189,6 +193,7 @@ describe('workspace normalization', () => {
     const config = await ensureConfig(paths);
 
     expect(config.defaultAgentCommand).toBe('codex --profile default');
+    expect(config.defaultAgentPreset).toBe('custom');
     expect(config.heavyAgentCommand).toBeNull();
   });
 

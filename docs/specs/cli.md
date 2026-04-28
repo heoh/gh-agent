@@ -28,6 +28,7 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - GitHub 인증 준비 또는 `gh auth login` 유도
 - 필수 설정 검증
 - 기본 에이전트 실행 command 기본값 준비
+- 첫 init 시 default agent preset 또는 custom command 선택
 - heavy 에이전트 실행 command 자리 확보
 
 ### Inputs
@@ -37,6 +38,8 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - workspace path
 - agent name 또는 identifier
 - polling interval 기본값
+- `--agent-preset <preset>`
+- `--custom-command <command>`
 
 ### Side Effects
 
@@ -50,6 +53,7 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 - 생성된 workspace 경로
 - 다음 실행 방법 안내 (`run`)
 - 인증 상태 또는 필요한 후속 조치
+- 선택된 default agent preset / command 요약
 
 ## run
 
@@ -110,6 +114,7 @@ stdout에는 사람이 읽을 수 있는 최소 운영 로그를 출력한다.
 ### Suggested Output Fields
 
 - current mode
+- default agent preset
 - default agent command configured 여부
 - heavy agent command configured 여부
 - 최근 selection rule 요약 또는 selected agent class

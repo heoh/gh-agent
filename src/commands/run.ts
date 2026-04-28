@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { acquireLock, releaseLock } from '../core/lock.js';
+import { resolveAgentRuntimeEnvironment } from '../core/agent-presets.js';
 import {
   createGitHubSignalClient,
   GitHubAuthError,
@@ -56,9 +57,11 @@ function createSessionEnvironment(input: {
   prompt: string;
   ghConfigDir: string;
   gitConfigGlobalFile: string;
+  agentRuntimeEnv?: NodeJS.ProcessEnv;
 }): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    ...input.agentRuntimeEnv,
     prompt: input.prompt,
     GH_CONFIG_DIR: input.ghConfigDir,
     GIT_CONFIG_GLOBAL: input.gitConfigGlobalFile,
@@ -325,6 +328,11 @@ export async function runCommand(
                 prompt,
                 ghConfigDir: paths.ghConfigDir,
                 gitConfigGlobalFile: paths.gitConfigGlobalFile,
+                agentRuntimeEnv: resolveAgentRuntimeEnvironment({
+                  config,
+                  paths,
+                  executedAgentClass,
+                }),
               }),
             });
             console.log(

@@ -12,6 +12,7 @@
 agent-workspace/
   work/
   .gh-agent/
+    agent-config/
     config.json
     session_state.json
     wake_decisions.jsonl
@@ -25,6 +26,7 @@ agent-workspace/
 예상 항목 예시:
 
 - agent identifier
+- default agent preset
 - default agent command
 - heavy agent command
 - polling interval
@@ -40,6 +42,7 @@ agent-workspace/
 ```json
 {
   "agentId": "gh-agent",
+  "defaultAgentPreset": "codex",
   "defaultAgentCommand": "codex exec --config sandbox_workspace_write.network_access=true --full-auto \"$prompt\"",
   "heavyAgentCommand": null,
   "pollIntervalMs": 30000,
@@ -50,8 +53,10 @@ agent-workspace/
 실행 명령 관련 규칙:
 
 - `agentId`는 식별자다. 실제 실행 커맨드는 `defaultAgentCommand` 와 `heavyAgentCommand` 가 담당한다.
+- `defaultAgentPreset` 은 init 에서 선택한 preset 식별자이며, command template/caveat 문맥을 문서화하기 위한 메타데이터다.
 - `defaultAgentCommand` 는 항상 문자열이어야 하며 MVP 기본값은 `codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"` 다.
 - command의 prompt 부분은 시스템이 세션마다 동적으로 생성한 행동 가이드를 주입하는 자리다.
+- `defaultAgentCommand` 는 반드시 `$prompt` placeholder를 포함해야 한다.
 - `heavyAgentCommand` 는 문자열 또는 `null` 이다.
 - heavy command가 `null` 인 경우, heavy 에이전트가 선택되어도 시스템은 기본 command로 폴백할 수 있다.
 
@@ -107,12 +112,15 @@ agent-workspace/
 
 ```text
 .gh-agent/
+  agent-config/
   config.json
   session_state.json
   wake_decisions.jsonl
   lock
   logs/
 ```
+
+- `agent-config/` 아래 경로는 preset이 지원할 때만 각 CLI의 workspace-local home/config dir로 사용된다.
 
 ## Locking and Logs
 

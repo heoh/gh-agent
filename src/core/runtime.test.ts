@@ -152,6 +152,7 @@ describe('session state transitions', () => {
       },
       {
         agentId: 'gh-agent',
+        defaultAgentPreset: 'codex',
         defaultAgentCommand:
           'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
         heavyAgentCommand: null,
@@ -239,6 +240,7 @@ describe('agent selection and prompt', () => {
     const execution = resolveAgentExecution(
       {
         agentId: 'gh-agent',
+        defaultAgentPreset: 'codex',
         defaultAgentCommand:
           'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
         heavyAgentCommand: null,

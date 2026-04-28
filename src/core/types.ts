@@ -1,5 +1,13 @@
 export type AgentMode = 'sleeping' | 'active';
 export type AgentClass = 'default' | 'heavy';
+export type AgentPresetId =
+  | 'claude'
+  | 'codex'
+  | 'copilot'
+  | 'gemini'
+  | 'cursor'
+  | 'cline'
+  | 'custom';
 
 export interface ProjectFieldIds {
   status: string | null;
@@ -25,6 +33,7 @@ export interface ProjectExecutionClassOptionIds {
 
 export interface Config {
   agentId: string;
+  defaultAgentPreset: AgentPresetId;
   defaultAgentCommand: string;
   heavyAgentCommand: string | null;
   pollIntervalMs: number;
@@ -273,6 +282,21 @@ export interface GitHubProjectConfig {
     light: string;
     heavy: string;
   };
+}
+
+export interface WorkspacePaths {
+  root: string;
+  agentsFile: string;
+  configFile: string;
+  stateGitignoreFile: string;
+  stateDir: string;
+  stateFile: string;
+  sessionNotesDir: string;
+  lockFile: string;
+  wakeDecisionsFile: string;
+  ghConfigDir: string;
+  gitConfigGlobalFile: string;
+  workDir: string;
 }
 
 export interface EnsuredGitHubProject extends GitHubProjectConfig {

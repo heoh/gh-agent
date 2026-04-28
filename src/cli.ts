@@ -43,7 +43,17 @@ function createProgram(): Command {
   program
     .command('init')
     .description('Initialize a gh-agent workspace.')
-    .action(initCommand);
+    .option(
+      '--agent-preset <preset>',
+      'Preset for the default agent command: claude, codex, copilot, gemini, cursor, cline, custom.',
+    )
+    .option(
+      '--custom-command <command>',
+      'Custom default agent command template. Must include "$prompt".',
+    )
+    .action(async (options: { agentPreset?: string; customCommand?: string }) =>
+      initCommand(options),
+    );
 
   program
     .command('run')

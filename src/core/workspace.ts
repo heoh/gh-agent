@@ -17,24 +17,16 @@ import type {
   ProjectFieldIds,
   ProjectStatusOptionIds,
   SessionState,
+  WorkspacePaths,
 } from './types.js';
-
-export interface WorkspacePaths {
-  root: string;
-  agentsFile: string;
-  configFile: string;
-  stateGitignoreFile: string;
-  stateDir: string;
-  stateFile: string;
-  sessionNotesDir: string;
-  lockFile: string;
-  wakeDecisionsFile: string;
-  ghConfigDir: string;
-  gitConfigGlobalFile: string;
-  workDir: string;
-}
+import {
+  DEFAULT_AGENT_PRESET_ID,
+  resolveAgentPresetCommandTemplate,
+  resolveDefaultAgentPresetId,
+} from './agent-presets.js';
 
 export class WorkspaceNotFoundError extends Error {}
+export type { WorkspacePaths } from './types.js';
 const DEFAULT_AGENTS_TEMPLATE_URL = new URL(
   './default-agents.md',
   import.meta.url,
@@ -71,8 +63,10 @@ function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptio
 
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
-  defaultAgentCommand:
-    'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+  defaultAgentPreset: DEFAULT_AGENT_PRESET_ID,
+  defaultAgentCommand: resolveAgentPresetCommandTemplate(
+    DEFAULT_AGENT_PRESET_ID,
+  ),
   heavyAgentCommand: null,
   pollIntervalMs: 30_000,
   debounceMs: 60_000,
@@ -175,6 +169,14 @@ function normalizeConfig(raw: unknown): Config {
       typeof record.agentId === 'string' && record.agentId.length > 0
         ? record.agentId
         : DEFAULT_CONFIG.agentId,
+    defaultAgentPreset: resolveDefaultAgentPresetId({
+      presetId: record.defaultAgentPreset,
+      defaultAgentCommand:
+        typeof record.defaultAgentCommand === 'string' &&
+        record.defaultAgentCommand.length > 0
+          ? record.defaultAgentCommand
+          : DEFAULT_CONFIG.defaultAgentCommand,
+    }),
     defaultAgentCommand:
       typeof record.defaultAgentCommand === 'string' &&
       record.defaultAgentCommand.length > 0
@@ -339,6 +341,7 @@ export async function ensureWorkspaceStructure(
   await mkdir(paths.stateDir, { recursive: true });
   await mkdir(paths.sessionNotesDir, { recursive: true });
   await mkdir(paths.ghConfigDir, { recursive: true });
+  await mkdir(`${paths.stateDir}/agent-config`, { recursive: true });
   await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
   if (!(await pathExists(paths.stateGitignoreFile))) {
     await writeFile(paths.stateGitignoreFile, '*\n!config.json\n', 'utf8');

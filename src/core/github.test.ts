@@ -42,6 +42,7 @@ const {
 function createConfig(): Config {
   return {
     agentId: 'gh-agent',
+    defaultAgentPreset: 'codex',
     defaultAgentCommand:
       'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
     heavyAgentCommand: null,

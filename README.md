@@ -36,7 +36,35 @@ gh-agent init
 ```
 
 `gh-agent init` ensures a GitHub Project named `gh-agent` exists on the
-authenticated account (creates it if missing).
+authenticated account (creates it if missing). On first initialization it also
+chooses the default agent preset used to populate `defaultAgentCommand`.
+
+You can choose the preset explicitly:
+
+```bash
+gh-agent init --agent-preset codex
+gh-agent init --agent-preset gemini
+gh-agent init --custom-command 'my-agent --headless "$prompt"'
+```
+
+Built-in preset ids:
+
+- `claude`
+- `codex`
+- `copilot`
+- `gemini`
+- `cursor`
+- `cline`
+- `custom`
+
+Preset notes:
+
+- Presets are command-template helpers, not deep integrations.
+- Each CLI must already be installed and authenticated.
+- `codex` defaults to workspace-write plus network access because GitHub work
+  needs network-enabled execution.
+- `cursor` should be treated as beta.
+- Custom commands must include the literal `$prompt` placeholder.
 
 ### 2) Run the loop
 
@@ -52,7 +80,8 @@ Stop with `Ctrl+C`.
 gh-agent status
 ```
 
-Use this only for quick operational checks (lock, mode, auth, signal summary).
+Use this only for quick operational checks (lock, mode, auth, signal summary,
+configured default preset).
 
 ## How It Works
 
