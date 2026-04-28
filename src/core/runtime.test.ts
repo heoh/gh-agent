@@ -152,7 +152,8 @@ describe('session state transitions', () => {
       },
       {
         agentId: 'gh-agent',
-        defaultAgentCommand: 'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        defaultAgentCommand:
+          'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
         heavyAgentCommand: null,
         pollIntervalMs: 30_000,
         debounceMs: 60_000,
@@ -238,7 +239,8 @@ describe('agent selection and prompt', () => {
     const execution = resolveAgentExecution(
       {
         agentId: 'gh-agent',
-        defaultAgentCommand: 'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+        defaultAgentCommand:
+          'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
         heavyAgentCommand: null,
         pollIntervalMs: 30_000,
         debounceMs: 60_000,
@@ -272,7 +274,9 @@ describe('agent selection and prompt', () => {
     );
 
     expect(execution.executedAgentClass).toBe('default');
-    expect(execution.command).toBe('codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"');
+    expect(execution.command).toBe(
+      'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$prompt"',
+    );
   });
 
   it('builds a mission-first prompt and injects dynamic context as JSON', () => {
