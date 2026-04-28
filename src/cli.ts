@@ -14,6 +14,11 @@ import {
 import { mailboxShowCommand } from './commands/mailbox/show.js';
 import { runCommand } from './commands/run.js';
 import { statusCommand } from './commands/status.js';
+import {
+  type AgentId,
+  formatSupportedAgentIds,
+  parseAgentIdOption,
+} from './core/agents.js';
 import { taskCreateCommand } from './commands/task/create.js';
 import {
   parseTaskExecutionClassOption,
@@ -43,7 +48,18 @@ function createProgram(): Command {
   program
     .command('init')
     .description('Initialize a gh-agent workspace.')
-    .action(initCommand);
+    .option(
+      '--agent <name>',
+      `Agent CLI to configure. One of: ${formatSupportedAgentIds()}`,
+      parseAgentIdOption,
+    )
+    .option(
+      '--agent-command <command>',
+      'Custom agent command to store in config.json.',
+    )
+    .action(async (options: { agent?: AgentId; agentCommand?: string }) =>
+      initCommand(options),
+    );
 
   program
     .command('run')

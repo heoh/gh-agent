@@ -18,6 +18,7 @@ import type {
   ProjectStatusOptionIds,
   SessionState,
 } from './types.js';
+import { getDefaultAgentDefinition } from './agents.js';
 
 export interface WorkspacePaths {
   root: string;
@@ -71,8 +72,7 @@ function createEmptyProjectExecutionClassOptionIds(): ProjectExecutionClassOptio
 
 export const DEFAULT_CONFIG: Config = {
   agentId: 'gh-agent',
-  defaultAgentCommand:
-    'codex exec --config sandbox_workspace_write.network_access=true --full-auto "$GH_AGENT_PROMPT"',
+  defaultAgentCommand: getDefaultAgentDefinition().defaultAgentCommand,
   heavyAgentCommand: null,
   pollIntervalMs: 30_000,
   debounceMs: 60_000,

@@ -38,6 +38,22 @@ gh-agent init
 `gh-agent init` ensures a GitHub Project named `gh-agent` exists on the
 authenticated account (creates it if missing).
 
+In a terminal, it also lets you
+choose which agent CLI to use for the workspace.
+
+For non-interactive setup, you can pass either a built-in preset or a custom
+command directly:
+
+```bash
+gh-agent init --agent codex
+gh-agent init --agent-command 'my-agent "$GH_AGENT_PROMPT"'
+```
+
+When using a custom command:
+
+- `$GH_AGENT_PROMPT` contains the generated session prompt
+- `$GH_AGENT_HOME` points at the workspace root
+
 ### 2) Run the loop
 
 ```bash

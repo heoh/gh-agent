@@ -35,8 +35,19 @@ MVP는 npm 패키지로 배포되는 CLI를 전제로 하며, 사용자는 works
 예상 입력 예시:
 
 - workspace path
-- agent name 또는 identifier
+- `--agent <name>` (`claude-code`, `codex`, `copilot`, `gemini`, `cursor`, `cline`)
+- `--agent-command <command>`
 - polling interval 기본값
+- 터미널 환경에서는 agent 번호 목록 또는 custom command 입력
+
+입력 규칙:
+
+- `--agent`가 있으면 prompt 없이 해당 agent를 사용한다.
+- `--agent-command`가 있으면 custom command를 사용하며, `--agent`보다 우선한다.
+- `--agent`와 `--agent-command`가 모두 없고 TTY가 있으면 번호 기반 대화형 선택을 띄운다.
+- 번호 목록에는 `Custom command` 항목이 포함된다.
+- `Custom command` 선택 시 `$GH_AGENT_PROMPT` 와 `$GH_AGENT_HOME` 사용 가능 안내를 보여준다.
+- `--agent`와 `--agent-command`가 모두 없고 TTY가 없으면 에러로 종료한다.
 
 ### Side Effects
 

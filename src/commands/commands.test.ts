@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
+import { parseAgentIdOption } from '../core/agents.js';
 import { readLockInfo } from '../core/lock.js';
 import {
   GitHubAuthError,
@@ -17,7 +18,7 @@ import {
   captureConsoleLogs,
   setupWorkspaceTest,
 } from '../test/test-helpers.js';
-import { initCommand } from './init.js';
+import { initCommand, promptForCustomCommand } from './init.js';
 import { mailboxIgnoreCommand } from './mailbox/ignore.js';
 import { mailboxListCommand } from './mailbox/list.js';
 import {
@@ -335,11 +336,17 @@ function createEnsuredProjectStub(
   };
 }
 
+async function initWithCodex(
+  dependencies: Parameters<typeof initCommand>[1] = {},
+) {
+  await initCommand({ agent: 'codex' }, dependencies);
+}
+
 describe('commands', () => {
   it('initCommand creates the workspace files, bootstraps the project, and prints the next steps', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -371,6 +378,7 @@ describe('commands', () => {
     expect(logs).toContain('Ensuring GitHub Project...');
     expect(logs).toContain('Initialized gh-agent workspace');
     expect(logs).toContain('Config: .gh-agent/config.json created');
+    expect(logs).toContain('Agent: OpenAI Codex CLI (codex)');
     expect(logs).toContain('AGENTS.md: created');
     expect(logs).toContain('GitHub Project: created gh-agent');
     expect(logs).toContain(
@@ -382,10 +390,261 @@ describe('commands', () => {
     expect(agentsFile).toContain('## Core Role');
   });
 
+  it('initCommand applies the selected agent command from interactive selection', async () => {
+    await initCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: true,
+        async promptForSelection() {
+          return {
+            label: 'Cursor CLI (cursor)',
+            command: 'cursor-agent -p "$GH_AGENT_PROMPT" --force',
+          };
+        },
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'cursor-agent -p "$GH_AGENT_PROMPT" --force',
+    );
+  });
+
+  it('initCommand requires --agent in non-interactive mode', async () => {
+    await expect(
+      initCommand(
+        {},
+        {
+          githubClient: createGitHubClientStub(0, 0),
+          isInteractive: false,
+        },
+      ),
+    ).rejects.toMatchObject({
+      message:
+        'Non-interactive mode requires --agent or --agent-command. Re-run with gh-agent init --agent <name> or --agent-command "<command>".',
+      exitCode: 2,
+    });
+  });
+
+  it('initCommand accepts a custom agent command in non-interactive mode', async () => {
+    const logs = captureConsoleLogs();
+
+    await initCommand(
+      {
+        agentCommand: 'my-agent "$GH_AGENT_PROMPT" --cwd "$GH_AGENT_HOME"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: false,
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'my-agent "$GH_AGENT_PROMPT" --cwd "$GH_AGENT_HOME"',
+    );
+    expect(
+      logs.some((line) => line.startsWith('Agent: Custom command (my-agent ')),
+    ).toBe(true);
+  });
+
+  it('initCommand applies a custom command chosen from interactive selection', async () => {
+    await initCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: true,
+        async promptForSelection() {
+          return {
+            label: 'Custom command (custom-agent "$GH_AGENT_PROMPT")',
+            command: 'custom-agent "$GH_AGENT_PROMPT"',
+          };
+        },
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe('custom-agent "$GH_AGENT_PROMPT"');
+  });
+
+  it('initCommand prefers --agent-command over --agent when both are provided', async () => {
+    await initCommand(
+      {
+        agent: 'codex',
+        agentCommand: 'custom-agent "$GH_AGENT_PROMPT"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe('custom-agent "$GH_AGENT_PROMPT"');
+  });
+
+  it('initCommand updates an existing agent command when an agent option is provided', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await mkdir(paths.stateDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'codex exec "$GH_AGENT_PROMPT"',
+      }),
+      'utf8',
+    );
+
+    await initCommand(
+      { agent: 'gemini' },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'gemini --prompt "$GH_AGENT_PROMPT" --yolo',
+    );
+  });
+
+  it('initCommand updates an existing agent command when a custom command option is provided', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await mkdir(paths.stateDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'codex exec "$GH_AGENT_PROMPT"',
+      }),
+      'utf8',
+    );
+
+    await initCommand(
+      {
+        agentCommand: 'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+    );
+  });
+
+  it('initCommand skips interactive selection when an agent command is already configured', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await mkdir(paths.stateDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'existing-agent "$GH_AGENT_PROMPT"',
+      }),
+      'utf8',
+    );
+
+    let promptCalled = false;
+
+    await initCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: true,
+        async promptForSelection() {
+          promptCalled = true;
+          return {
+            label: 'Gemini CLI (gemini)',
+            command: 'gemini --prompt "$GH_AGENT_PROMPT" --yolo',
+          };
+        },
+      },
+    );
+
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(promptCalled).toBe(false);
+    expect(config.defaultAgentCommand).toBe(
+      'existing-agent "$GH_AGENT_PROMPT"',
+    );
+  });
+
+  it('initCommand surfaces agent prompt cancellation clearly', async () => {
+    await expect(
+      initCommand(
+        {},
+        {
+          githubClient: createGitHubClientStub(0, 0),
+          isInteractive: true,
+          async promptForSelection() {
+            const error = new Error('prompt aborted');
+            error.name = 'ExitPromptError';
+            throw error;
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'Agent selection was cancelled.',
+      exitCode: 1,
+    });
+  });
+
+  it('promptForCustomCommand prints env var help and reprompts on empty input', async () => {
+    const logs = captureConsoleLogs();
+    const asked: string[] = [];
+    const answers = ['', 'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"'];
+    let closed = false;
+
+    const selection = await promptForCustomCommand({
+      async question(query) {
+        asked.push(query);
+        return answers.shift() ?? '';
+      },
+      close() {
+        closed = true;
+      },
+    });
+
+    expect(selection.command).toBe(
+      'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+    );
+    expect(selection.label.startsWith('Custom command (custom-agent ')).toBe(
+      true,
+    );
+    expect(asked).toEqual(['Command: ', 'Command: ']);
+    expect(logs).toContain('Enter a one-line custom agent command.');
+    expect(logs).toContain('Please enter a non-empty command.');
+    expect(closed).toBe(false);
+  });
+
   it('statusCommand reads the current state and reports an unlocked workspace', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await statusCommand(
@@ -416,7 +675,7 @@ describe('commands', () => {
   it('statusCommand resolves the nearest workspace root from nested directories', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -443,7 +702,7 @@ describe('commands', () => {
     };
     let didCaptureExecuteInput = false;
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await runCommand(
@@ -501,7 +760,7 @@ describe('commands', () => {
       env: {},
     };
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -530,7 +789,7 @@ describe('commands', () => {
   it('runCommand respects cooldown and still releases the lock', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     const paths = getWorkspacePaths(getWorkspaceRoot());
@@ -572,7 +831,7 @@ describe('commands', () => {
   it('runCommand records a session failure and still returns to sleeping mode', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await runCommand(
@@ -608,7 +867,7 @@ describe('commands', () => {
   it('runCommand injects recent updated task cards into prompt context', async () => {
     const prompts: string[] = [];
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -662,7 +921,7 @@ describe('commands', () => {
   it('mailboxListCommand prints JSON with one object per line by default', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxListCommand(
@@ -681,7 +940,7 @@ describe('commands', () => {
   it('mailboxListCommand respects the limit option', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxListCommand(
@@ -701,7 +960,7 @@ describe('commands', () => {
   it('mailboxListCommand prints an empty JSON array when no unread notifications exist', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxListCommand(
@@ -722,7 +981,7 @@ describe('commands', () => {
   it('mailboxPromoteCommand promotes multiple threads and prints JSON results', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxPromoteCommand(
@@ -742,7 +1001,7 @@ describe('commands', () => {
   it('mailboxWaitCommand and mailboxReadyCommand force their status aliases', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxWaitCommand(
@@ -772,7 +1031,7 @@ describe('commands', () => {
     const logs = captureConsoleLogs();
     const markedAsRead: string[] = [];
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -818,7 +1077,7 @@ describe('commands', () => {
     const logs = captureConsoleLogs();
     const markedAsRead: string[] = [];
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxIgnoreCommand(
@@ -845,7 +1104,7 @@ describe('commands', () => {
     const logs = captureConsoleLogs();
     const markedAsRead: string[] = [];
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -881,7 +1140,7 @@ describe('commands', () => {
   it('mailboxShowCommand prints thread details and related cards as JSON', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxShowCommand(
@@ -916,7 +1175,7 @@ describe('commands', () => {
   it('mailboxShowCommand returns an empty relatedCards array when no exact match exists', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await mailboxShowCommand(
@@ -943,7 +1202,7 @@ describe('commands', () => {
   it('taskListCommand prints compact JSON rows', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskListCommand({}, { githubClient: createGitHubClientStub(0, 0) });
@@ -979,7 +1238,7 @@ describe('commands', () => {
   it('taskListCommand honors status, priority, type, and execution class filters', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskListCommand(
@@ -1011,7 +1270,7 @@ describe('commands', () => {
   it('taskShowCommand prints full card JSON', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskShowCommand(
@@ -1040,7 +1299,7 @@ describe('commands', () => {
   it('taskCreateCommand requires title and status and prints the created card JSON', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskCreateCommand(
@@ -1075,7 +1334,7 @@ describe('commands', () => {
   it('taskUpdateCommand patches only supplied fields', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskUpdateCommand(
@@ -1112,7 +1371,7 @@ describe('commands', () => {
   it('task status commands update multiple ids and fail after mixed results', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1152,7 +1411,7 @@ describe('commands', () => {
   it('task status aliases force the requested statuses', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
     await taskReadyCommand(
@@ -1261,10 +1520,16 @@ describe('commands', () => {
     );
   });
 
+  it('parseInitAgentOption rejects unsupported agents', () => {
+    expect(() => parseAgentIdOption('unknown')).toThrow(
+      'The --agent option must be one of: copilot, claude-code, codex, gemini, cursor, cline.',
+    );
+  });
+
   it('initCommand reuses an existing gh-agent project without duplicating it', async () => {
     const logs = captureConsoleLogs();
 
-    await initCommand({
+    await initWithCodex({
       githubClient: {
         ...createGitHubClientStub(0, 0),
         async ensureProject() {
@@ -1281,7 +1546,7 @@ describe('commands', () => {
     let authChecks = 0;
     let loginCalled = false;
 
-    await initCommand({
+    await initWithCodex({
       githubClient: {
         ...createGitHubClientStub(0, 0),
         async login() {
@@ -1315,7 +1580,7 @@ describe('commands', () => {
 
   it('initCommand maps GitHub authentication failures to exit code 3 when login does not authenticate the workspace', async () => {
     await expect(
-      initCommand({
+      initWithCodex({
         githubClient: {
           ...createGitHubClientStub(0, 0),
           async getAuthStatus(paths) {
@@ -1338,7 +1603,7 @@ describe('commands', () => {
     let refreshCalled = false;
     let ensureCalls = 0;
 
-    await initCommand({
+    await initWithCodex({
       githubClient: {
         ...createGitHubClientStub(0, 0),
         async refreshProjectScopes() {
@@ -1368,7 +1633,7 @@ describe('commands', () => {
 
   it('initCommand includes the failing bootstrap stage in the error message', async () => {
     await expect(
-      initCommand({
+      initWithCodex({
         githubClient: {
           ...createGitHubClientStub(0, 0),
           async ensureProject() {
@@ -1388,7 +1653,7 @@ describe('commands', () => {
 
   it('initCommand fails with exit code 2 when the existing Status field schema conflicts', async () => {
     await expect(
-      initCommand({
+      initWithCodex({
         githubClient: {
           ...createGitHubClientStub(0, 0),
           async ensureProject() {
@@ -1403,7 +1668,7 @@ describe('commands', () => {
   });
 
   it('runCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1499,7 +1764,7 @@ describe('commands', () => {
   });
 
   it('mailboxListCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1526,7 +1791,7 @@ describe('commands', () => {
   });
 
   it('mailboxPromoteCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1566,7 +1831,7 @@ describe('commands', () => {
   });
 
   it('mailboxIgnoreCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1606,7 +1871,7 @@ describe('commands', () => {
   });
 
   it('mailboxShowCommand maps GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
@@ -1646,7 +1911,7 @@ describe('commands', () => {
   });
 
   it('task commands map GitHub authentication failures to exit code 3', async () => {
-    await initCommand({
+    await initWithCodex({
       githubClient: createGitHubClientStub(0, 0),
     });
 
