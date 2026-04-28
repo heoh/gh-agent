@@ -184,17 +184,25 @@ export async function initCommand(
     : dependenciesArg;
   const paths = getWorkspacePaths();
   const githubClient = dependencies.githubClient ?? createGitHubSignalClient();
+  await ensureWorkspaceStructure(paths);
+  const hadConfig = await pathExists(paths.configFile);
+  const config = await ensureConfig(paths);
   const isInteractive = dependencies.isInteractive ?? isInteractiveTerminal();
   const customAgentCommand =
     typeof options.agentCommand === 'string' ? options.agentCommand.trim() : '';
-  let selection: InitCommandSelection | null =
+  const requestedSelection =
     customAgentCommand.length > 0
       ? createCustomCommandSelection(customAgentCommand)
       : options.agent !== undefined
         ? createPresetSelection(options.agent)
         : null;
+  let selection: InitCommandSelection;
 
-  if (selection === null && isInteractive) {
+  if (requestedSelection !== null) {
+    selection = requestedSelection;
+  } else if (hadConfig) {
+    selection = createCustomCommandSelection(config.defaultAgentCommand);
+  } else if (isInteractive) {
     try {
       selection = await (
         dependencies.promptForSelection ?? selectAgentPrompt
@@ -202,9 +210,7 @@ export async function initCommand(
     } catch (error) {
       mapAgentPromptError(error);
     }
-  }
-
-  if (selection === null) {
+  } else {
     throw Object.assign(
       new Error(
         'Non-interactive mode requires --agent or --agent-command. Re-run with gh-agent init --agent <name> or --agent-command "<command>".',
@@ -213,10 +219,6 @@ export async function initCommand(
     );
   }
 
-  await ensureWorkspaceStructure(paths);
-
-  const hadConfig = await pathExists(paths.configFile);
-  const config = await ensureConfig(paths);
   const configWithSelectedAgent = {
     ...config,
     defaultAgentCommand: selection.command,

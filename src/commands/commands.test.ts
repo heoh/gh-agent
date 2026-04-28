@@ -499,7 +499,7 @@ describe('commands', () => {
     expect(config.defaultAgentCommand).toBe('custom-agent "$GH_AGENT_PROMPT"');
   });
 
-  it('initCommand overwrites an existing default agent command with the selected agent', async () => {
+  it('initCommand updates an existing agent command when an agent option is provided', async () => {
     const paths = getWorkspacePaths(getWorkspaceRoot());
     await mkdir(paths.stateDir, { recursive: true });
     await writeFile(
@@ -523,6 +523,73 @@ describe('commands', () => {
 
     expect(config.defaultAgentCommand).toBe(
       'gemini --prompt "$GH_AGENT_PROMPT" --yolo',
+    );
+  });
+
+  it('initCommand updates an existing agent command when a custom command option is provided', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await mkdir(paths.stateDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'codex exec "$GH_AGENT_PROMPT"',
+      }),
+      'utf8',
+    );
+
+    await initCommand(
+      {
+        agentCommand: 'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+      },
+      {
+        githubClient: createGitHubClientStub(0, 0),
+      },
+    );
+
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(config.defaultAgentCommand).toBe(
+      'custom-agent "$GH_AGENT_PROMPT" "$GH_AGENT_HOME"',
+    );
+  });
+
+  it('initCommand skips interactive selection when an agent command is already configured', async () => {
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await mkdir(paths.stateDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        defaultAgentCommand: 'existing-agent "$GH_AGENT_PROMPT"',
+      }),
+      'utf8',
+    );
+
+    let promptCalled = false;
+
+    await initCommand(
+      {},
+      {
+        githubClient: createGitHubClientStub(0, 0),
+        isInteractive: true,
+        async promptForSelection() {
+          promptCalled = true;
+          return {
+            label: 'Gemini CLI (gemini)',
+            command: 'gemini --prompt "$GH_AGENT_PROMPT" --yolo',
+          };
+        },
+      },
+    );
+
+    const config = JSON.parse(
+      await readFile(paths.configFile, 'utf8'),
+    ) as Record<string, unknown>;
+
+    expect(promptCalled).toBe(false);
+    expect(config.defaultAgentCommand).toBe(
+      'existing-agent "$GH_AGENT_PROMPT"',
     );
   });
 
