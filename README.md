@@ -60,8 +60,6 @@ Use this only for quick operational checks (lock, mode, auth, signal summary).
 It monitors GitHub signals (notifications and project updates), and wakes only
 when there are unread messages or remaining tasks.
 When work is needed, it runs an agent session and then returns to waiting.
-The default command template receives the session brief through
-`GH_AGENT_PROMPT`.
 
 ## Commands
 
