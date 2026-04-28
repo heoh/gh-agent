@@ -331,7 +331,6 @@ export async function ensureWorkspaceStructure(
   await mkdir(paths.stateDir, { recursive: true });
   await mkdir(paths.sessionNotesDir, { recursive: true });
   await mkdir(paths.ghConfigDir, { recursive: true });
-  await mkdir(`${paths.stateDir}/agent-config`, { recursive: true });
   await writeFile(paths.gitConfigGlobalFile, '', { flag: 'a' });
   if (!(await pathExists(paths.stateGitignoreFile))) {
     await writeFile(paths.stateGitignoreFile, '*\n!config.json\n', 'utf8');

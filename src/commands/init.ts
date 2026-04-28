@@ -283,7 +283,7 @@ export async function initCommand(
     console.log(`Default agent command: ${updatedConfig.defaultAgentCommand}`);
     if (preset.supportsIsolatedConfig && preset.configEnv !== null) {
       console.log(
-        `Preset config isolation: ${preset.configEnv} -> ${paths.stateDir}/agent-config/${preset.id}`,
+        `Preset config isolation: ${preset.configEnv} -> ${paths.root} (via GH_AGENT_HOME)`,
       );
     }
     console.log(`GitHub CLI config dir: ${paths.ghConfigDir}`);

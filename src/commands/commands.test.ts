@@ -526,9 +526,7 @@ describe('commands', () => {
     expect(decisions[0].executedAgentClass).toBe('default');
     expect(decisions[0].sessionExitCode).toBe(0);
     expect(didCaptureExecuteInput).toBe(true);
-    expect(executeInput.env.CODEX_HOME).toBe(
-      `${paths.stateDir}/agent-config/codex`,
-    );
+    expect(executeInput.env.CODEX_HOME).toBe(paths.root);
     expect(executeInput.env.GH_AGENT_HOME).toBe(paths.root);
     expect(executeInput.env.GH_CONFIG_DIR).toBe(paths.ghConfigDir);
     expect(executeInput.env.GIT_CONFIG_GLOBAL).toBe(paths.gitConfigGlobalFile);

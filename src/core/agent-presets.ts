@@ -183,15 +183,14 @@ export function inferAgentPresetIdFromCommand(command: string): AgentPresetId {
 }
 
 export function getAgentPresetConfigDir(
-  paths: Pick<WorkspacePaths, 'stateDir'>,
-  presetId: AgentPresetId,
+  paths: Pick<WorkspacePaths, 'root'>,
 ): string {
-  return `${paths.stateDir}/agent-config/${presetId}`;
+  return paths.root;
 }
 
 export function resolveAgentRuntimeEnvironment(input: {
   config: Config;
-  paths: Pick<WorkspacePaths, 'stateDir'>;
+  paths: Pick<WorkspacePaths, 'root'>;
   executedAgentClass: 'default' | 'heavy';
 }): Record<string, string> {
   if (input.executedAgentClass !== 'default') {
@@ -206,7 +205,7 @@ export function resolveAgentRuntimeEnvironment(input: {
   }
 
   return {
-    [preset.configEnv]: getAgentPresetConfigDir(input.paths, preset.id),
+    [preset.configEnv]: getAgentPresetConfigDir(input.paths),
   };
 }
 

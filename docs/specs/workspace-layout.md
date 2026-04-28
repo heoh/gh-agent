@@ -12,7 +12,6 @@
 agent-workspace/
   work/
   .gh-agent/
-    agent-config/
     config.json
     session_state.json
     wake_decisions.jsonl
@@ -112,15 +111,12 @@ agent-workspace/
 
 ```text
 .gh-agent/
-  agent-config/
   config.json
   session_state.json
   wake_decisions.jsonl
   lock
   logs/
 ```
-
-- `agent-config/` 아래 경로는 preset이 지원할 때만 각 CLI의 workspace-local home/config dir로 사용된다.
 
 ## Locking and Logs
 

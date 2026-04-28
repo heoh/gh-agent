@@ -75,12 +75,12 @@ describe('agent presets', () => {
           defaultAgentCommand: 'gemini -p "$prompt"',
         }),
         paths: {
-          stateDir: '/tmp/workspace/.gh-agent',
+          root: '/tmp/workspace',
         },
         executedAgentClass: 'default',
       }),
     ).toEqual({
-      GEMINI_CLI_HOME: '/tmp/workspace/.gh-agent/agent-config/gemini',
+      GEMINI_CLI_HOME: '/tmp/workspace',
     });
 
     expect(
@@ -89,7 +89,7 @@ describe('agent presets', () => {
           defaultAgentCommand: 'claude -p "$prompt"',
         }),
         paths: {
-          stateDir: '/tmp/workspace/.gh-agent',
+          root: '/tmp/workspace',
         },
         executedAgentClass: 'default',
       }),
