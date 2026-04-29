@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createRequire } from 'node:module';
+
 import { Command } from 'commander';
 
 import { initCommand } from './commands/init.js';
@@ -37,13 +39,16 @@ import {
 } from './commands/task/status.js';
 import { taskUpdateCommand } from './commands/task/update.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json') as { version: string };
+
 function createProgram(): Command {
   const program = new Command();
 
   program
     .name('gh-agent')
     .description('CLI for running the gh-agent workspace workflow.')
-    .version('0.1.0');
+    .version(version);
 
   program
     .command('init')
