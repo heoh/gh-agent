@@ -18,6 +18,11 @@ GitHub signals and works directly in issues, PRs, reviews, and comments.
 npm install -g gh-agent
 ```
 
+Requirements:
+
+- Node.js 20 or newer
+- GitHub CLI (`gh`) installed and available on `PATH`
+
 ## Agent Account Setup (Required)
 
 Before first run, prepare a **separate GitHub account** for delegation:
