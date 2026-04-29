@@ -35,24 +35,13 @@ Run this in the directory you want to use as the agent workspace.
 gh-agent init
 ```
 
-`gh-agent init` ensures a GitHub Project named `gh-agent` exists on the
-authenticated account (creates it if missing).
+`gh-agent init` sets up the workspace, lets you choose an agent CLI in
+interactive terminals, may require GitHub CLI login, and ensures a GitHub
+Project named `gh-agent` exists on the authenticated account.
 
-In a terminal, it also lets you
-choose which agent CLI to use for the workspace.
-
-For non-interactive setup, you can pass either a built-in preset or a custom
-command directly:
-
-```bash
-gh-agent init --agent codex
-gh-agent init --agent-command 'my-agent "$GH_AGENT_PROMPT"'
-```
-
-When using a custom command:
-
-- `$GH_AGENT_PROMPT` contains the generated session prompt
-- `$GH_AGENT_HOME` points at the workspace root
+> Warning: Built-in agent presets may enable more autonomous or less-confirming
+> behavior. Review the preset command first, or use a custom command for
+> tighter control.
 
 ### 2) Run the loop
 
@@ -69,6 +58,19 @@ gh-agent status
 ```
 
 Use this only for quick operational checks (lock, mode, auth, signal summary).
+
+## Init Options
+
+For non-interactive setup, you can pass either a built-in preset or a custom
+command directly:
+
+```bash
+gh-agent init --agent codex
+gh-agent init --agent-command 'my-agent "$GH_AGENT_PROMPT"'
+```
+
+Custom commands receive `$GH_AGENT_PROMPT`; `$GH_AGENT_HOME` points at the
+workspace root.
 
 ## How It Works
 
