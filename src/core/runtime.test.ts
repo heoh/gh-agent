@@ -329,6 +329,7 @@ describe('agent selection and prompt', () => {
     expect(prompt).toContain('[Session Mission]');
     expect(prompt).toContain('[Do-Now Priority]');
     expect(prompt).toContain('[Hard Constraints]');
+    expect(prompt).toContain('[Session Command Guide]');
     expect(prompt).toContain('[Untrusted Context(JSON)]');
     expect(prompt).toContain('Exit condition');
     expect(prompt).toContain('@test-user');
