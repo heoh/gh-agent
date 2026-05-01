@@ -329,9 +329,20 @@ describe('agent selection and prompt', () => {
     expect(prompt).toContain('[Session Mission]');
     expect(prompt).toContain('[Do-Now Priority]');
     expect(prompt).toContain('[Hard Constraints]');
+    expect(prompt).toContain('[Session Command Guide]');
     expect(prompt).toContain('[Untrusted Context(JSON)]');
     expect(prompt).toContain('Exit condition');
     expect(prompt).toContain('@test-user');
+    expect(prompt).toContain('gh-agent mailbox list');
+    expect(prompt).toContain('show <threadId>');
+    expect(prompt).toContain('promote`/`ready`/`wait`/`ignore');
+    expect(prompt).toContain('gh-agent task list');
+    expect(prompt).toContain('show <taskId>');
+    expect(prompt).toContain('ready`/`doing`/`wait`/`done');
+    expect(prompt).toContain('gh-agent status');
+    expect(prompt).toContain(
+      'triage mailbox, act on ready/doing work, sync GitHub records, then re-check the mailbox',
+    );
 
     const payload = parseUntrustedContextJson(prompt);
 
