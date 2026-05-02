@@ -86,6 +86,7 @@ jobs:
         run: |
           branch="gh-agent/prepare-release-v$RELEASE_VERSION"
           title="Prepare release $RELEASE_VERSION"
+          compare_url="https://github.com/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -128,5 +129,27 @@ jobs:
             gh pr edit "$existing_pr" --title "$title" --body-file /tmp/release-pr-body.md
             echo "Updated existing release PR #$existing_pr."
           else
-            gh pr create --base main --head "$branch" --title "$title" --body-file /tmp/release-pr-body.md
+            set +e
+            create_output="$(gh pr create --base main --head "$branch" --title "$title" --body-file /tmp/release-pr-body.md 2>&1)"
+            create_status=$?
+            set -e
+
+            if [ "$create_status" -eq 0 ]; then
+              printf '%s\n' "$create_output"
+            elif printf '%s' "$create_output" | grep -Fq 'GitHub Actions is not permitted to create or approve pull requests'; then
+              echo "GitHub Actions could not create the release PR automatically because repository settings currently disallow PR creation from GITHUB_TOKEN."
+              echo "The release branch was pushed successfully. Create the PR manually:"
+              echo "$compare_url"
+              {
+                echo "## Manual PR follow-up required"
+                echo
+                echo "GitHub Actions pushed \`$branch\` successfully, but the repository currently disallows pull request creation from \`GITHUB_TOKEN\`."
+                echo
+                echo "Create the release PR manually:"
+                echo "$compare_url"
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              printf '%s\n' "$create_output"
+              exit "$create_status"
+            fi
           fi
