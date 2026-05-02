@@ -9,7 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -28,6 +28,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -40,10 +42,12 @@ jobs:
         run: npm ci
 
       - name: Validate requested version
+        id: version
         run: |
           package_name="$(node -p "require('./package.json').name")"
           package_version="$(node -p "require('./package.json').version")"
           requested_version="${{ inputs.version }}"
+          tag_name="v$package_version"
 
           if [ "$package_version" != "$requested_version" ]; then
             echo "Requested version $requested_version does not match package.json version $package_version."
@@ -51,11 +55,66 @@ jobs:
           fi
 
           if npm view "$package_name@$package_version" version --registry=https://registry.npmjs.org >/tmp/npm-published-version 2>/dev/null; then
-            echo "$package_name@$package_version is already published to npm."
-            exit 1
+            already_published=true
+            echo "$package_name@$package_version is already published to npm. Continuing so tag/release state can be reconciled."
+          else
+            already_published=false
           fi
 
           echo "Validated $package_name@$package_version for publication."
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "target_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "already_published=$already_published" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
+        if: steps.version.outputs.already_published != 'true'
         run: npm publish
+
+      - name: Ensure release tag
+        env:
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          TARGET_SHA: ${{ steps.version.outputs.target_sha }}
+        run: |
+          git fetch --force --tags origin
+
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            tagged_commit="$(git rev-parse "$TAG_NAME^{commit}")"
+            if [ "$tagged_commit" != "$TARGET_SHA" ]; then
+              echo "Existing tag $TAG_NAME points to $tagged_commit, expected $TARGET_SHA."
+              exit 1
+            fi
+
+            echo "Tag $TAG_NAME already exists at $tagged_commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG_NAME" "$TARGET_SHA" -m "Release $TAG_NAME"
+            git push origin "refs/tags/$TAG_NAME"
+            echo "Created tag $TAG_NAME at $TARGET_SHA."
+          fi
+
+      - name: Ensure GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+        run: |
+          if release_url="$(gh release view "$TAG_NAME" --json url --jq '.url' 2>/dev/null)"; then
+            echo "Release $TAG_NAME already exists: $release_url"
+          else
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --generate-notes
+            release_url="$(gh release view "$TAG_NAME" --json url --jq '.url')"
+            echo "Created release $TAG_NAME: $release_url"
+          fi
+
+          {
+            echo "## npm publish result"
+            if [ "${{ steps.version.outputs.already_published }}" = "true" ]; then
+              echo "- npm package already existed for \`${{ steps.version.outputs.package_name }}@${{ steps.version.outputs.package_version }}\`; skipped duplicate publish."
+            else
+              echo "- Published \`${{ steps.version.outputs.package_name }}@${{ steps.version.outputs.package_version }}\` to npm."
+            fi
+            echo "- Verified tag \`${TAG_NAME}\` on commit \`${{ steps.version.outputs.target_sha }}\`."
+            echo "- Verified GitHub Release: ${release_url}"
+          } >> "$GITHUB_STEP_SUMMARY"
