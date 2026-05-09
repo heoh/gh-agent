@@ -209,6 +209,7 @@ class OctokitGitHubApiClient implements GitHubApiClient {
         const shouldRetry = retryDelayMs !== undefined && isRetryable;
 
         if (isGitHubAuthFailure(error)) {
+          // Drop only the in-memory Octokit instance so a retry asks gh for a fresh token.
           this.octokitByConfigDir.delete(paths.ghConfigDir);
         }
 
