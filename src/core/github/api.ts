@@ -96,6 +96,31 @@ function isGitHubNetworkFailure(error: unknown): boolean {
   );
 }
 
+function isGitHubServerFailure(error: unknown): boolean {
+  const status = getGitHubErrorStatus(error);
+
+  return status !== null && status >= 500 && status <= 599;
+}
+
+function isRetryableGitHubApiFailure(
+  error: unknown,
+  allowAuthRetry: boolean,
+): boolean {
+  if (error instanceof GitHubRuntimeError) {
+    return false;
+  }
+
+  if (isGitHubAuthFailure(error)) {
+    return allowAuthRetry;
+  }
+
+  return (
+    isGitHubNetworkFailure(error) ||
+    isGitHubServerFailure(error) ||
+    isGitHubRateLimitFailure(error)
+  );
+}
+
 function toGitHubApiError(
   error: unknown,
 ): GitHubAuthError | GitHubRuntimeError {
@@ -123,6 +148,12 @@ function toGitHubApiError(
 function getApiPathFromUrl(url: string): string {
   const parsed = new URL(url);
   return `${parsed.pathname}${parsed.search}`;
+}
+
+const GITHUB_API_RETRY_DELAYS_MS = [250, 1_000];
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 class OctokitGitHubApiClient implements GitHubApiClient {
@@ -157,15 +188,68 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     throw toGitHubApiError(error);
   }
 
+  private async runWithRetry<T>(
+    paths: Pick<WorkspacePaths, 'ghConfigDir'>,
+    operationName: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    for (let attemptIndex = 0; ; attemptIndex += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const attempt = attemptIndex + 1;
+        const hasAuthenticatedClient = this.octokitByConfigDir.has(
+          paths.ghConfigDir,
+        );
+        const retryDelayMs = GITHUB_API_RETRY_DELAYS_MS[attemptIndex];
+        const isRetryable = isRetryableGitHubApiFailure(
+          error,
+          hasAuthenticatedClient,
+        );
+        const shouldRetry = retryDelayMs !== undefined && isRetryable;
+
+        if (isGitHubAuthFailure(error)) {
+          this.octokitByConfigDir.delete(paths.ghConfigDir);
+        }
+
+        if (!shouldRetry) {
+          if (isRetryable) {
+            console.warn(
+              `GitHub API ${operationName} failed after ${attempt} attempts; retries exhausted: ${extractGitHubErrorMessage(
+                error,
+              )}`,
+            );
+          }
+
+          throw error;
+        }
+
+        const nextAttempt = attempt + 1;
+        console.warn(
+          `GitHub API ${operationName} failed on attempt ${attempt}; retrying in ${retryDelayMs}ms (attempt ${nextAttempt} of ${
+            GITHUB_API_RETRY_DELAYS_MS.length + 1
+          }): ${extractGitHubErrorMessage(error)}`,
+        );
+        await sleep(retryDelayMs);
+      }
+    }
+  }
+
   async listUnreadNotifications(
     paths: Pick<WorkspacePaths, 'ghConfigDir'>,
   ): Promise<NotificationThread[]> {
     try {
-      const octokit = await this.getOctokit(paths);
+      return await this.runWithRetry(
+        paths,
+        'list unread notifications',
+        async () => {
+          const octokit = await this.getOctokit(paths);
 
-      return (await octokit.paginate('GET /notifications', {
-        per_page: 100,
-      })) as NotificationThread[];
+          return (await octokit.paginate('GET /notifications', {
+            per_page: 100,
+          })) as NotificationThread[];
+        },
+      );
     } catch (error) {
       this.handleError(paths, error);
     }
@@ -176,9 +260,14 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     threadId: string,
   ): Promise<NotificationThread> {
     try {
-      const octokit = await this.getOctokit(paths);
-      const response = await octokit.request(
-        `GET /notifications/threads/${threadId}`,
+      const response = await this.runWithRetry(
+        paths,
+        'get notification thread',
+        async () => {
+          const octokit = await this.getOctokit(paths);
+
+          return octokit.request(`GET /notifications/threads/${threadId}`);
+        },
       );
 
       return response.data as NotificationThread;
@@ -192,8 +281,15 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     url: string,
   ): Promise<NotificationSubjectResource> {
     try {
-      const octokit = await this.getOctokit(paths);
-      const response = await octokit.request(`GET ${getApiPathFromUrl(url)}`);
+      const response = await this.runWithRetry(
+        paths,
+        'get notification resource',
+        async () => {
+          const octokit = await this.getOctokit(paths);
+
+          return octokit.request(`GET ${getApiPathFromUrl(url)}`);
+        },
+      );
 
       return response.data as NotificationSubjectResource;
     } catch (error) {
@@ -206,9 +302,15 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     threadId: string,
   ): Promise<void> {
     try {
-      const octokit = await this.getOctokit(paths);
+      await this.runWithRetry(
+        paths,
+        'mark mailbox thread as read',
+        async () => {
+          const octokit = await this.getOctokit(paths);
 
-      await octokit.request(`PATCH /notifications/threads/${threadId}`);
+          await octokit.request(`PATCH /notifications/threads/${threadId}`);
+        },
+      );
     } catch (error) {
       this.handleError(paths, error);
     }
@@ -220,8 +322,11 @@ class OctokitGitHubApiClient implements GitHubApiClient {
     variables: Record<string, string> = {},
   ): Promise<T> {
     try {
-      const octokit = await this.getOctokit(paths);
-      const response = await octokit.graphql<unknown>(query, variables);
+      const response = await this.runWithRetry(paths, 'graphql', async () => {
+        const octokit = await this.getOctokit(paths);
+
+        return octokit.graphql<unknown>(query, variables);
+      });
 
       if (
         typeof response === 'object' &&

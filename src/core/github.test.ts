@@ -147,6 +147,13 @@ function createProjectValueNode(items: unknown[]): {
   };
 }
 
+function createOctokitError(
+  message: string,
+  details: { status?: number; code?: string } = {},
+): Error & { status?: number; code?: string } {
+  return Object.assign(new Error(message), details);
+}
+
 beforeEach(() => {
   execFileMock.mockReset();
   spawnMock.mockReset();
@@ -340,6 +347,124 @@ describe('parseMailboxNotificationsPayload', () => {
 });
 
 describe('GitHub mailbox mutations', () => {
+  it('retries transient notification list failures before returning mailbox notifications', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitPaginateMock
+      .mockRejectedValueOnce(
+        createOctokitError('socket hang up', { code: 'ECONNRESET' }),
+      )
+      .mockResolvedValueOnce([
+        {
+          id: 'thread_retry',
+          reason: 'assign',
+          updated_at: '2026-04-20T10:00:00Z',
+          repository: { full_name: 'acme/widgets' },
+          subject: {
+            title: 'Retry GitHub polling',
+            type: 'Issue',
+          },
+        },
+      ]);
+
+    try {
+      const client = createGitHubSignalClient();
+      const notifications = await client.listMailboxNotifications({
+        ghConfigDir: '/tmp/gh-config-retry-network',
+      });
+
+      expect(notifications).toEqual([
+        {
+          id: 'thread_retry',
+          repositoryFullName: 'acme/widgets',
+          title: 'Retry GitHub polling',
+          reason: 'assign',
+          type: 'Issue',
+          updatedAt: '2026-04-20T10:00:00.000Z',
+        },
+      ]);
+      expect(octokitPaginateMock).toHaveBeenCalledTimes(2);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'GitHub API list unread notifications failed on attempt 1',
+        ),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('retries auth-looking API failures after an authenticated Octokit client exists', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitRequestMock
+      .mockRejectedValueOnce(
+        createOctokitError('Bad credentials', { status: 401 }),
+      )
+      .mockResolvedValueOnce({ data: {} });
+
+    try {
+      const client = createGitHubSignalClient();
+      await client.markMailboxThreadAsRead(
+        { ghConfigDir: '/tmp/gh-config-retry-auth' },
+        'thread_1',
+      );
+
+      expect(octokitRequestMock).toHaveBeenCalledTimes(2);
+      expect(octokitConstructorMock).toHaveBeenCalledTimes(2);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'GitHub API mark mailbox thread as read failed on attempt 1',
+        ),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not retry permanent validation failures', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitRequestMock.mockRejectedValueOnce(
+      createOctokitError('Validation Failed', { status: 422 }),
+    );
+
+    try {
+      const client = createGitHubSignalClient();
+      await expect(
+        client.markMailboxThreadAsRead(
+          { ghConfigDir: '/tmp/gh-config-no-retry-validation' },
+          'thread_1',
+        ),
+      ).rejects.toThrow(GitHubRuntimeError);
+
+      expect(octokitRequestMock).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not retry GraphQL semantic responses without usable data', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitPaginateMock.mockResolvedValueOnce([]);
+    octokitGraphqlMock.mockResolvedValueOnce({
+      errors: [{ message: 'field requires project scope' }],
+    });
+
+    try {
+      const client = createGitHubSignalClient();
+      await expect(
+        client.getSignalSummary(
+          { ghConfigDir: '/tmp/gh-config-no-retry-graphql-semantic' },
+          createConfig(),
+        ),
+      ).rejects.toThrow('GitHub GraphQL response did not include usable data');
+
+      expect(octokitGraphqlMock).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('ensureProject accepts raw octokit graphql responses without a data wrapper', async () => {
     const project = createProjectValueNode([]);
 
@@ -1190,32 +1315,53 @@ describe('GitHub mailbox mutations', () => {
 });
 
 describe('GitHub API failure handling', () => {
-  it('maps 401 responses to GitHubAuthError for mailbox listing', async () => {
-    octokitPaginateMock.mockRejectedValueOnce({
+  it('maps exhausted 401 responses to GitHubAuthError for mailbox listing', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitPaginateMock.mockRejectedValue({
       status: 401,
       message: 'Bad credentials',
     });
 
-    const client = createGitHubSignalClient();
+    try {
+      const client = createGitHubSignalClient();
 
-    await expect(
-      client.listMailboxNotifications({ ghConfigDir: '/tmp/gh-config' }),
-    ).rejects.toBeInstanceOf(GitHubAuthError);
+      await expect(
+        client.listMailboxNotifications({
+          ghConfigDir: '/tmp/gh-config-auth-exhaustion',
+        }),
+      ).rejects.toBeInstanceOf(GitHubAuthError);
+
+      expect(octokitPaginateMock).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('retries exhausted'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
-  it('maps rate-limit responses to GitHubRuntimeError', async () => {
-    octokitPaginateMock.mockRejectedValueOnce({
+  it('maps exhausted rate-limit responses to GitHubRuntimeError', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitPaginateMock.mockRejectedValue({
       status: 403,
       message: 'API rate limit exceeded for test user.',
     });
 
-    const client = createGitHubSignalClient();
-    const result = client.listMailboxNotifications({
-      ghConfigDir: '/tmp/gh-config',
-    });
+    try {
+      const client = createGitHubSignalClient();
+      const result = client.listMailboxNotifications({
+        ghConfigDir: '/tmp/gh-config-rate-limit-exhaustion',
+      });
 
-    await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
-    await expect(result).rejects.toThrow(/rate limit exceeded/i);
+      await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
+      await expect(result).rejects.toThrow(/rate limit exceeded/i);
+      expect(octokitPaginateMock).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('retries exhausted'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('fails fast when GraphQL returns errors without usable data', async () => {
@@ -1236,17 +1382,27 @@ describe('GitHub API failure handling', () => {
     );
   });
 
-  it('maps transient network failures to GitHubRuntimeError', async () => {
-    octokitRequestMock.mockRejectedValueOnce({
+  it('maps exhausted transient network failures to GitHubRuntimeError', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitRequestMock.mockRejectedValue({
       code: 'ETIMEDOUT',
       message: 'connect ETIMEDOUT api.github.com:443',
     });
-    const result = resolveMailboxThreadDetail(
-      { ghConfigDir: '/tmp/gh-config' },
-      'thread_1',
-    );
 
-    await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
-    await expect(result).rejects.toThrow(/GitHub network error/i);
+    try {
+      const result = resolveMailboxThreadDetail(
+        { ghConfigDir: '/tmp/gh-config-network-exhaustion' },
+        'thread_1',
+      );
+
+      await expect(result).rejects.toBeInstanceOf(GitHubRuntimeError);
+      await expect(result).rejects.toThrow(/GitHub network error/i);
+      expect(octokitRequestMock).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('retries exhausted'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
