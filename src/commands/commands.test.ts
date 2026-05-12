@@ -828,6 +828,114 @@ describe('commands', () => {
     expect(await readLockInfo(paths.lockFile)).toBeNull();
   });
 
+  it('runCommand retries an auth-looking failure after monitor polling has succeeded', async () => {
+    const logs = captureConsoleLogs();
+    let signalChecks = 0;
+
+    await initWithCodex({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        ...(JSON.parse(await readFile(paths.configFile, 'utf8')) as Record<
+          string,
+          unknown
+        >),
+        pollIntervalMs: 1,
+      }),
+      'utf8',
+    );
+
+    await runCommand(
+      {},
+      {
+        githubClient: {
+          ...createGitHubClientStub(0, 0),
+          async getSignalSummary(_paths, config) {
+            expect(config.projectId).toBe('proj_123');
+            signalChecks += 1;
+
+            if (signalChecks === 2) {
+              throw new GitHubAuthError(
+                'Requires authentication - https://docs.github.com/rest',
+              );
+            }
+
+            return {
+              unreadCount: 0,
+              actionableCount: 0,
+            };
+          },
+        },
+        maxPollCycles: 2,
+      },
+    );
+
+    expect(signalChecks).toBe(3);
+    expect(logs).toContain(
+      'GitHub authentication error during monitor polling; retrying once after 1ms: Requires authentication - https://docs.github.com/rest',
+    );
+  });
+
+  it('runCommand fails when a monitor auth retry also fails', async () => {
+    const logs = captureConsoleLogs();
+    let signalChecks = 0;
+
+    await initWithCodex({
+      githubClient: createGitHubClientStub(0, 0),
+    });
+    const paths = getWorkspacePaths(getWorkspaceRoot());
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        ...(JSON.parse(await readFile(paths.configFile, 'utf8')) as Record<
+          string,
+          unknown
+        >),
+        pollIntervalMs: 1,
+      }),
+      'utf8',
+    );
+
+    await expect(
+      runCommand(
+        {},
+        {
+          githubClient: {
+            ...createGitHubClientStub(0, 0),
+            async getSignalSummary(_paths, config) {
+              expect(config.projectId).toBe('proj_123');
+              signalChecks += 1;
+
+              if (signalChecks >= 2) {
+                throw new GitHubAuthError(
+                  'Requires authentication - https://docs.github.com/rest',
+                );
+              }
+
+              return {
+                unreadCount: 0,
+                actionableCount: 0,
+              };
+            },
+          },
+          maxPollCycles: 2,
+        },
+      ),
+    ).rejects.toMatchObject({
+      message:
+        'GitHub authentication error: Requires authentication - https://docs.github.com/rest',
+      exitCode: 3,
+    });
+
+    expect(signalChecks).toBe(3);
+    expect(logs).toContain(
+      'GitHub authentication error during monitor polling; retrying once after 1ms: Requires authentication - https://docs.github.com/rest',
+    );
+  });
+
   it('runCommand records a session failure and still returns to sleeping mode', async () => {
     const logs = captureConsoleLogs();
 
