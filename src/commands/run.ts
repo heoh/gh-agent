@@ -84,6 +84,14 @@ function parseIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(timestamp.getTime()) ? null : timestamp;
 }
 
+async function waitForMonitorPollInterval(
+  pollIntervalMs: number,
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, pollIntervalMs);
+  });
+}
+
 async function getSignalSummaryForMonitorPoll(
   githubClient: GitHubSignalClient,
   paths: { ghConfigDir: string },
@@ -98,8 +106,10 @@ async function getSignalSummaryForMonitorPoll(
     }
 
     console.log(
-      `GitHub authentication error during monitor polling; retrying once: ${error.message}`,
+      `GitHub authentication error during monitor polling; retrying once after ${config.pollIntervalMs}ms: ${error.message}`,
     );
+
+    await waitForMonitorPollInterval(config.pollIntervalMs);
 
     return githubClient.getSignalSummary(paths, config);
   }

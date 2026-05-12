@@ -875,7 +875,7 @@ describe('commands', () => {
 
     expect(signalChecks).toBe(3);
     expect(logs).toContain(
-      'GitHub authentication error during monitor polling; retrying once: Requires authentication - https://docs.github.com/rest',
+      'GitHub authentication error during monitor polling; retrying once after 1ms: Requires authentication - https://docs.github.com/rest',
     );
   });
 
