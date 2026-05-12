@@ -420,6 +420,35 @@ describe('GitHub mailbox mutations', () => {
     }
   });
 
+  it('retries observed REST authentication failures during notification polling', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    octokitPaginateMock
+      .mockRejectedValueOnce(
+        createOctokitError(
+          'Requires authentication - https://docs.github.com/rest',
+        ),
+      )
+      .mockResolvedValueOnce([]);
+
+    try {
+      const client = createGitHubSignalClient();
+      const notifications = await client.listMailboxNotifications({
+        ghConfigDir: '/tmp/gh-config-retry-observed-auth',
+      });
+
+      expect(notifications).toEqual([]);
+      expect(octokitPaginateMock).toHaveBeenCalledTimes(2);
+      expect(octokitConstructorMock).toHaveBeenCalledTimes(2);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'GitHub API list unread notifications failed on attempt 1',
+        ),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not retry permanent validation failures', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     octokitRequestMock.mockRejectedValueOnce(
