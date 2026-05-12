@@ -84,6 +84,27 @@ function parseIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(timestamp.getTime()) ? null : timestamp;
 }
 
+async function getSignalSummaryForMonitorPoll(
+  githubClient: GitHubSignalClient,
+  paths: { ghConfigDir: string },
+  config: Parameters<GitHubSignalClient['getSignalSummary']>[1],
+  hasCompletedSignalPoll: boolean,
+): Promise<Awaited<ReturnType<GitHubSignalClient['getSignalSummary']>>> {
+  try {
+    return await githubClient.getSignalSummary(paths, config);
+  } catch (error) {
+    if (!(error instanceof GitHubAuthError) || !hasCompletedSignalPoll) {
+      throw error;
+    }
+
+    console.log(
+      `GitHub authentication error during monitor polling; retrying once: ${error.message}`,
+    );
+
+    return githubClient.getSignalSummary(paths, config);
+  }
+}
+
 function selectRecentUpdatedTaskCards(
   tasks: Array<{
     id: string;
@@ -176,6 +197,7 @@ export async function runCommand(
     let interruptPollSleep: (() => void) | null = null;
     let githubUsername: string | null = null;
     let githubName: string | null = null;
+    let hasCompletedSignalPoll = false;
 
     const stopHandler = () => {
       if (!hasLoggedStop) {
@@ -209,7 +231,13 @@ export async function runCommand(
       while (!shouldStop) {
         const now = new Date();
         const previousAgentMode = state.currentMode;
-        const signals = await githubClient.getSignalSummary(paths, config);
+        const signals = await getSignalSummaryForMonitorPoll(
+          githubClient,
+          paths,
+          config,
+          hasCompletedSignalPoll,
+        );
+        hasCompletedSignalPoll = true;
         state = recordNotificationPoll(state, now);
         await saveSessionState(paths, state);
 
